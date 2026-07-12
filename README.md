@@ -99,3 +99,16 @@ hundreds of problems serialize to well over GitHub's 100MB file limit.
 Regenerate them by running the notebook, or ask whoever ran it to share the
 file directly (Drive/Slack) if you just want to run the analysis scripts
 without re-running Colab yourself.
+
+## Authors
+
+Created during **SMILES 2026**.
+
+| Author | Affiliation | Contact |
+| --- | --- | --- |
+| Michael Leontiev | HSE University | [michlea@yandex.ru](mailto:michlea@yandex.ru) |
+| Kirill Chernikov | ITMO University | [kmchernikov@itmo.ru](mailto:kmchernikov@itmo.ru) |
+| Nika Smirnova | AIRI | [nika646470@gmail.com](mailto:nika646470@gmail.com) |
+| Alima Chekueva | — | — |
+
+Research pilot around the FrugalProver proposal by Serguei Barannikov (Skoltech).

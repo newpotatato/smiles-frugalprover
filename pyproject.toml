@@ -7,6 +7,13 @@ name = "frugalprover"
 version = "0.1.0"
 description = "FrugalProver pilot: shared library + per-direction experiments testing whether solve-effort is predictable from a small model's activations."
 requires-python = ">=3.9"
+# Created during SMILES 2026.
+authors = [
+    { name = "Michael Leontiev", email = "michlea@yandex.ru" },     # HSE University
+    { name = "Kirill Chernikov", email = "kmchernikov@itmo.ru" },   # ITMO University
+    { name = "Nika Smirnova", email = "nika646470@gmail.com" },     # AIRI
+    { name = "Alima Chekueva" },
+]
 # Local pipeline deps (CPU only). The Colab extraction notebooks install their
 # own GPU stack (transformers/accelerate/torch+cuda) in their first cell.
 dependencies = [
