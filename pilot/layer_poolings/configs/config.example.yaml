@@ -19,7 +19,7 @@ prompt_template: "{problem}"
 #   negative indices allowed (-1 = last layer).
 
 # Pooled hidden-state vectors: collapse the token cloud into one (hidden_size,) vector.
-# pooling: one of [mean, max, last, first, sum]
+# pooling: one of [mean, std, max, last, sum]
 features:
   - {layer: 3,  pooling: max}
   - {layer: 5,  pooling: last}

@@ -38,7 +38,7 @@ Config lives in a YAML file (or the inline `CONFIG` dict). Key fields:
 
 - `model_name` — HuggingFace model id, loaded with `AutoModel` (decoder-only base models work best for math semantics).
 - `dataset_name` / `dataset_config` / `dataset_split` / `num_problems` — MATH source and sampling.
-- `features` — list of `{layer, pooling}`. `pooling ∈ {mean, max, last, first, sum}`.
+- `features` — list of `{layer, pooling}`. `pooling ∈ {mean, std, max, last, sum}`.
 - `geometry` — list of `{layer, metric}`. `metric ∈ {l2_norm, mean_token_norm, token_norm_std, anisotropy, effective_rank}`.
 - `batch_size`, `max_input_tokens` (input truncation only — nothing is generated), `dtype`, `device`.
 

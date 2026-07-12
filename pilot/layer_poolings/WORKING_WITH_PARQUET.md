@@ -19,12 +19,13 @@ hidden-state vectors, and geometry scalars.
 
 Column names come directly from the config (cell 12):
 
-- pooled: `f"L{layer}_{pooling}"` → e.g. `L3_max`, `L5_last`, `L-1_mean`
-- geometry: `f"L{layer}_{metric}"` → e.g. `L3_l2_norm`, `L5_anisotropy`, `L-1_effective_rank`
+- pooled: `f"L{layer}_{pooling}"` → e.g. `L3_max`, `L5_last`, `L28_mean`
+- geometry: `f"L{layer}_{metric}"` → e.g. `L3_l2_norm`, `L5_anisotropy`, `L28_effective_rank`
 
 `layer` indexes `output_hidden_states`: `0` = embeddings, `1..N` = transformer block
-outputs, negatives count from the end (`-1` = last layer). A `-1` in the name is
-literal text, not an error.
+outputs, negatives count from the end (`-1` = last layer). Negative layer indexes
+are resolved to their absolute position in the column name (e.g. for a 28-layer
+model `-1` becomes `L28`).
 
 > **Key gotcha:** pooled columns are **columns of arrays**, not scalars. Every cell in
 > `L3_max` holds a full `(hidden_size,)` vector (768, 896, … depending on the model).
