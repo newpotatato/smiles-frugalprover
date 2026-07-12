@@ -1,0 +1,75 @@
+# Config for hidden-states extraction, tuned for predicting MATH problem HARDNESS.
+# Drop-in replacement for config.example.yaml (load with USE_YAML=True in the notebook).
+#
+# Model choice rationale
+# ----------------------
+# Difficulty is a *semantic* property of a problem, so the extractor's internal
+# representations should encode math structure well. A math-pretrained decoder-only
+# model separates easy/hard problems far more sharply in hidden space than a small
+# general model like Qwen2.5-0.5B. We use the BASE (not -Instruct) variant so the
+# hidden states reflect raw problem semantics rather than chat/instruction behavior.
+#
+# Recommended:  Qwen/Qwen2.5-Math-1.5B
+#   - math-specialized pretraining, decoder-only (matches last-token pooling)
+#   - 28 layers, hidden_size 1536  -> hidden_states tuple length = 29 (0 = embeddings)
+#   - ~3 GB in fp16: fits a free Colab T4 comfortably
+#
+# Alternatives by budget (swap model_name; then re-pick layers by depth fraction):
+#   stronger, needs A100/L4:  Qwen/Qwen2.5-Math-7B  |  deepseek-ai/deepseek-math-7b-base
+#                             EleutherAI/llemma_7b   |  mistralai/Mathstral-7B-v0.1
+#   lighter general fallback: Qwen/Qwen2.5-1.5B
+
+model_name: "Qwen/Qwen2.5-Math-1.5B"
+
+# MATH benchmark source + how many problems to sample.
+# `level` (1..5) in these rows is the hardness label for the downstream task.
+dataset_name: "EleutherAI/hendrycks_math"   # alt: "lighteval/MATH", "hendrycks/competition_math"
+dataset_config: "algebra"                     # subject; null for datasets with no config
+dataset_split: "test"
+num_problems: 200
+shuffle_seed: 42
+
+prompt_template: "{problem}"
+
+# Which hidden states to keep + how to pool over the token axis.
+# layer indexes output_hidden_states: 0 = embeddings, 1..N = block outputs, -1 = last.
+# Chosen for a 28-layer model by depth fraction (~50% / ~75% / final):
+#   - mid layer,  mean  -> abstract/semantic content (cloud center)
+#   - mid layer,  std   -> per-dim spread of the token cloud at the same depth.
+#                          Companion to mean: how varied the reasoning content is
+#                          across tokens tends to track how "hard" the model finds
+#                          the problem. Kept at the mid (semantic) layer only to
+#                          limit added dimensionality vs. the 200-problem sample,
+#                          and because late layers get anisotropic (see geometry).
+#   - late layer, mean  -> higher-level task representation
+#   - final,      last  -> richest single summary vector for a causal LM
+# pooling: one of [mean, std, max, last, sum]
+features:
+  - {layer: 14, pooling: mean}   # ~50% depth, cloud center
+  - {layer: 14, pooling: std}    # ~50% depth, cloud spread (pairs with L14_mean)
+  - {layer: 21, pooling: mean}   # ~75% depth
+  - {layer: -1, pooling: last}   # final layer, last non-pad token
+
+# Geometric features: scalar shape statistics of the per-token hidden states
+# (the "token cloud") at a layer. Cheap scalars, complementary to the pooled
+# vectors above, and tend to track how "hard" the model finds a problem.
+# metric: one of
+#   l2_norm          norm of the mean-pooled vector (cloud center distance from origin)
+#   mean_token_norm  average length of the token vectors
+#   token_norm_std   std of the token vector lengths
+#   anisotropy       mean pairwise cosine similarity between tokens (directional spread)
+#   effective_rank   participation ratio of the cloud's singular spectrum (intrinsic dim)
+geometry:
+  - {layer: 14, metric: l2_norm}
+  - {layer: 14, metric: token_norm_std}
+  - {layer: 21, metric: mean_token_norm}
+  - {layer: 21, metric: effective_rank}
+  - {layer: -1, metric: l2_norm}
+  - {layer: -1, metric: anisotropy}
+
+# Runtime
+batch_size: 8
+max_input_tokens: 512      # input truncation length (NOT generation)
+dtype: "bfloat16"          # float16 | bfloat16 | float32  (bf16 safer for Qwen math)
+device: "cuda"             # cuda | cpu
+output_path: "Qwen1_5B_math_mid_mean.parquet"
