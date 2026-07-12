@@ -1,0 +1,9 @@
+# Local pipeline (data prep, merging, analysis, oracle) -- CPU only, no GPU needed.
+# The Colab notebook installs its own (transformers, accelerate, torch+cuda) via
+# its first cell; it does not need this file.
+datasets
+scikit-learn
+scipy
+matplotlib
+joblib
+numpy

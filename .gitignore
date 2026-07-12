@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# DocuMentor parse caches -- regenerable from the source PDFs/MD via the
+# documentor skill, not worth versioning (images + JSON graphs, several MB)
+.documentor/
+**/.documentor/
+
+# Local Claude Code config/memory -- not part of the shared team repo
+.claude/
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Superseded by this repo (was a manual zip snapshot before git existed here)
+FrugalProver_TeamPackage.zip
+_package_staging/
+
+# Raw pilot outputs -- activations at ALL layers for hundreds of problems
+# serialize to well over 100MB of JSON (GitHub's hard per-file limit), so
+# these are regenerated locally/in Colab and shared out-of-band (Drive/LFS),
+# not committed. Plots (*.png) and the fitted oracle_model.joblib are small
+# and ARE tracked -- only the raw per-problem activation dumps are excluded.
+pilot/pilot_*.jsonl
