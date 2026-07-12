@@ -1,53 +1,63 @@
-# FrugalProver — контекст и манифест литературы
+# FrugalProver — literature context & manifest
 
-Связывает 13 источников из `frugalproverBarannikov.pdf` с компонентами предложенной системы (budget oracle, prover, verifiers, corrector, human gate, orchestrator) и тремя гипотезами (H1 предсказуемость усилия, H2 выгода бюджетирования, H3 безопасность самоулучшения).
+Links the 13 sources from `docs/proposal.pdf` to the components of the proposed
+system (budget oracle, prover, verifiers, corrector, human gate, orchestrator)
+and to the three hypotheses (H1 effort is predictable, H2 budgeting pays off,
+H3 self-improvement is safe).
 
-## Кластер 1 — Геометрия внутренних представлений (обосновывает H1: "усилие предсказуемо")
+## Cluster 1 — Geometry of internal representations (backs H1: "effort is predictable")
 
-Это единственный кластер, не связанный напрямую с LLM/математикой — он даёт метод измерения, на котором строится budget oracle: гипотеза, что "разумные затраты усилия можно оценить по внутренним активациям", формально сводится к оценке *intrinsic dimension* (ID) многообразия активаций.
+This is the only cluster not directly tied to LLMs/mathematics — it supplies the
+measurement method the budget oracle is built on: the hypothesis that "the
+reasonable amount of effort can be estimated from internal activations" reduces
+formally to estimating the *intrinsic dimension* (ID) of the activation manifold.
 
-| # | Файл | Что показывает | Роль в FrugalProver |
+| # | File | What it shows | Role in FrugalProver |
 |---|---|---|---|
-| 1 | `01_Ansuini_IntrinsicDimension_NeurIPS2019.pdf` | ID представлений в скрытых слоях CNN образует характерную "горбатую" кривую по глубине сети; ID последнего скрытого слоя коррелирует с точностью классификации на тесте. | Прямая опора для G2 ("характеризовать геометрию/топологию внутреннего представления сложности задачи"): если ID последнего слоя предсказывает успех классификации, аналогичная связь ID↔сложность задачи может лежать в основе budget oracle. |
-| 2 | `02_Facco_TwoNN_SciReports2017.pdf` | Вводит эстиматор TwoNN — оценка ID датасета всего по расстояниям до 1-го и 2-го ближайших соседей, устойчива к кривизне и неравномерной плотности. | Конкретный инструмент, которым в G2 предполагается измерять "intrinsic dimension" активаций gℓ(x) — именно этот метод цитируется как техника (не просто мотивация). |
+| 1 | `01_Ansuini_IntrinsicDimension_NeurIPS2019.pdf` | The ID of hidden-layer representations in CNNs forms a characteristic "hunchback" curve over network depth; the ID of the last hidden layer correlates with test classification accuracy. | Direct support for G2 ("characterize the geometry/topology of the internal representation of problem difficulty"): if last-layer ID predicts classification success, an analogous ID↔difficulty link may underpin the budget oracle. |
+| 2 | `02_Facco_TwoNN_SciReports2017.pdf` | Introduces the TwoNN estimator — ID of a dataset from just the distances to the 1st and 2nd nearest neighbors, robust to curvature and non-uniform density. | The concrete tool G2 uses to measure the "intrinsic dimension" of the activations gℓ(x) — this method is cited as a *technique*, not merely as motivation. |
 
-## Кластер 2 — Бенчмарк и метод масштабирования вычислений (обосновывает H2: "бюджетирование эффективнее")
+## Cluster 2 — Benchmark and compute-scaling method (backs H2: "budgeting is more efficient")
 
-| # | Файл | Что показывает | Роль в FrugalProver |
+| # | File | What it shows | Role in FrugalProver |
 |---|---|---|---|
-| 3 | `03_Hendrycks_MATH_NeurIPS2021.pdf` | Вводит датасет MATH — 12 500 задач соревновательной математики с пошаговыми решениями; показывает, что простое увеличение размера модели почти не помогает на MATH (в отличие от большинства NLP-задач). | Основной бенчмарк валидации (Datasets/Metrics в разделе 1.3). Также обосновывает саму мотивацию проекта: раз масштаб параметров не решает задачу, нужен умный контроль вычислений — то есть budget oracle, а не просто "модель побольше". |
-| 7 | `07_Snell_ScalingTestTimeCompute_ICLR2025.pdf` | Показывает, что оптимальное (адаптивное, per-problem) распределение test-time compute даёт до ×4 эффективности по сравнению с best-of-N; иногда компенсирует 14× разницу в размере модели. | Прямой источник формализации в разделе "Formulation" — max ΣBᵢ pᵢ(Bᵢ) при Σ Bᵢ ≤ Btot — это, по сути, формализация той же задачи adaptive-compute-allocation, которую решает эта статья (ссылка [7] в тексте). Ядро гипотезы H2. |
-| 8 | `08_Wang_SelfConsistency_ICLR2023.pdf` | Self-consistency: сэмплирование нескольких цепочек рассуждений и выбор ответа по большинству голосов вместо жадного декодирования; даёт крупный прирост точности на арифметике/здравом смысле. | Один из baselines в протоколе валидации ("repeated sampling / self-consistency at matched compute", ссылка [8]) — с чем сравнивается budget-aware allocation. |
+| 3 | `03_Hendrycks_MATH_NeurIPS2021.pdf` | Introduces the MATH dataset — 12,500 competition-math problems with step-by-step solutions; shows that simply scaling model size barely helps on MATH (unlike most NLP tasks). | The main validation benchmark (Datasets/Metrics, §1.3). Also motivates the project itself: since parameter scale doesn't solve the task, you need smart compute control — a budget oracle, not just "a bigger model". |
+| 7 | `07_Snell_ScalingTestTimeCompute_ICLR2025.pdf` | Shows that optimal (adaptive, per-problem) allocation of test-time compute yields up to 4× efficiency over best-of-N; sometimes offsets a 14× model-size gap. | Direct source of the "Formulation" — max ΣBᵢ pᵢ(Bᵢ) s.t. Σ Bᵢ ≤ Btot — which is essentially the same adaptive-compute-allocation problem this paper solves (cited as [7]). The core of hypothesis H2. |
+| 8 | `08_Wang_SelfConsistency_ICLR2023.pdf` | Self-consistency: sample several reasoning chains and pick the answer by majority vote instead of greedy decoding; a large accuracy gain on arithmetic/common-sense. | One of the baselines in the validation protocol ("repeated sampling / self-consistency at matched compute", cited as [8]) — what budget-aware allocation is compared against. |
 
-## Кластер 3 — Пайплайны propose→verify→repair (архитектура prover/verifiers/corrector)
+## Cluster 3 — propose→verify→repair pipelines (the prover/verifiers/corrector architecture)
 
-| # | Файл | Что показывает | Роль в FrugalProver |
+| # | File | What it shows | Role in FrugalProver |
 |---|---|---|---|
-| 4 | `04_Lightman_LetsVerifyStepByStep_ICLR2024.pdf` | Process supervision (пошаговая проверка reasoning) значительно превосходит outcome supervision; PRM, обученная на 800K пошаговых меток (PRM800K), решает 78% MATH-подвыборки. | Прямой прообраз "skeptical verifiers": идея пошаговой, а не только финальной проверки доказательства — методологическая основа верификационного слоя системы. |
-| 5 | `05_Madaan_SelfRefine_NeurIPS2023.pdf` | SELF-REFINE: одна и та же LLM генерирует, критикует и переписывает свой же ответ итеративно, без дообучения; прирост ~20% по задачам. | Прообраз "corrector": паттерн feedback→refine — как модель чинит собственные пробелы в доказательстве до согласия верификаторов. |
-| 12 | `12_Zelikman_STaR_NeurIPS2022.pdf` | STaR: бутстрэппинг умения рассуждать — модель генерирует rationale, дообучается на успешных примерах, итеративно улучшая качество цепочек рассуждений без большого размеченного датасета. | Основа для "self-improving" части системы (адаптация новых тактик, G3) — итеративное самообучение на собственных успешных траекториях. |
+| 4 | `04_Lightman_LetsVerifyStepByStep_ICLR2024.pdf` | Process supervision (step-by-step checking of reasoning) substantially beats outcome supervision; a PRM trained on 800K step labels (PRM800K) solves 78% of a MATH subset. | Direct precursor of the "skeptical verifiers": the idea of step-level, not just final-answer, checking of a proof — the methodological basis of the system's verification layer. |
+| 5 | `05_Madaan_SelfRefine_NeurIPS2023.pdf` | SELF-REFINE: the same LLM generates, critiques, and rewrites its own answer iteratively, with no fine-tuning; ~20% gains across tasks. | Precursor of the "corrector": the feedback→refine pattern — how the model repairs its own proof gaps until the verifiers concur. |
+| 12 | `12_Zelikman_STaR_NeurIPS2022.pdf` | STaR: bootstrapping reasoning ability — the model generates rationales, fine-tunes on the successful ones, iteratively improving chain quality without a large labeled dataset. | Basis for the "self-improving" part of the system (adopting new tactics, G3) — iterative self-training on the model's own successful trajectories. |
 
-## Кластер 4 — Reasoning-техники и агентность (сам "prover" + tool use)
+## Cluster 4 — Reasoning techniques and agency (the "prover" itself + tool use)
 
-| # | Файл | Что показывает | Роль в FrugalProver |
+| # | File | What it shows | Role in FrugalProver |
 |---|---|---|---|
-| 9 | `09_Wei_ChainOfThought_NeurIPS2022.pdf` | Chain-of-thought prompting: несколько демонстраций пошагового рассуждения в промпте резко улучшают reasoning у достаточно больших моделей. | Базовая техника генерации кандидатов-доказательств прувером; фундамент, на котором строятся почти все остальные методы из кластеров 3–4. |
-| 10 | `10_Yao_TreeOfThoughts_NeurIPS2023.pdf` | Tree-of-Thoughts: обобщение CoT на дерево промежуточных "мыслей" с возможностью выбора, отката (backtrack) и заглядывания вперёд при глобальном поиске решения. | Альтернатива/расширение стратегии генерации доказательств — управляемый поиск вместо линейной генерации, применимо к prover при переборе тактик. |
-| 11 | `11_Yao_ReAct_ICLR2023.pdf` | ReAct: чередование словесного рассуждения и действий (вызовов инструментов/среды), давшее основу для многих последующих LLM-агентов. | Обосновывает "tool use" (ссылка [6] к Toolformer, но ReAct — методологический аналог) и общую агентную архитектуру с обращением к внешним ресурсам (например, к системе формальной проверки). |
-| 6 | `06_Schick_Toolformer_NeurIPS2023.pdf` | Toolformer: модель самообучается, когда и как вызывать внешние API (калькулятор, поиск и т.д.), в self-supervised режиме. | Прямая ссылка [6] "tool use" в Introduction — обоснование того, что prover/corrector могут использовать внешние инструменты (например, символьные решатели) в рамках бюджета. |
+| 9 | `09_Wei_ChainOfThought_NeurIPS2022.pdf` | Chain-of-thought prompting: a few step-by-step reasoning demonstrations in the prompt sharply improve reasoning in sufficiently large models. | The base technique for generating candidate proofs in the prover; the foundation almost all other methods in clusters 3–4 build on. |
+| 10 | `10_Yao_TreeOfThoughts_NeurIPS2023.pdf` | Tree-of-Thoughts: generalizes CoT to a tree of intermediate "thoughts" with selection, backtracking, and lookahead during a global search for a solution. | An alternative/extension of the proof-generation strategy — guided search instead of linear generation, applicable to the prover when exploring tactics. |
+| 11 | `11_Yao_ReAct_ICLR2023.pdf` | ReAct: interleaves verbal reasoning with actions (tool/environment calls), a foundation for many later LLM agents. | Backs "tool use" (cited as [6] to Toolformer, but ReAct is the methodological analog) and the overall agentic architecture that reaches for external resources (e.g. a formal proof checker). |
+| 6 | `06_Schick_Toolformer_NeurIPS2023.pdf` | Toolformer: the model self-teaches when and how to call external APIs (calculator, search, etc.) in a self-supervised way. | The direct [6] "tool use" reference in the Introduction — justification that the prover/corrector may use external tools (e.g. symbolic solvers) within a budget. |
 
-## Кластер 5 — Backbone-модель
+## Cluster 5 — Backbone model
 
-| # | Файл | Что показывает | Роль в FrugalProver |
+| # | File | What it shows | Role in FrugalProver |
 |---|---|---|---|
-| 13 | `13_Zeng_GLM4.5_arXiv2025.pdf` | GLM-4.5 — открытая MoE-модель (355B/32B активных параметров) с гибридным режимом "thinking/direct response", сильные показатели на агентных/reasoning/coding бенчмарках (включая AIME, SWE-bench). | Конкретный backbone с открытыми весами (ссылка [13]), на котором предполагается прогнать весь пайплайн — условие "runs entirely on open-weight models" из абстракта. |
+| 13 | `13_Zeng_GLM4.5_arXiv2025.pdf` | GLM-4.5 — an open MoE model (355B / 32B active) with a hybrid "thinking/direct response" mode, strong on agentic/reasoning/coding benchmarks (incl. AIME, SWE-bench). | The concrete open-weight backbone (cited as [13]) intended to run the whole pipeline — satisfying the abstract's "runs entirely on open-weight models" condition. |
 
-## Как кластеры соотносятся с тремя гипотезами статьи
+## How the clusters map to the paper's three hypotheses
 
-- **H1 (эффект предсказуем по активациям)** → Кластер 1 (Ansuini, Facco/TwoNN) даёт метод измерения; Кластер 2 (MATH, Snell) даёт эмпирическую площадку, где это можно проверить.
-- **H2 (бюджетирование эффективнее uniform/length-based)** → Snell (адаптивное compute scaling) — прямой методологический предшественник; Wang (self-consistency) и Hendrycks (MATH) — базовые линии сравнения.
-- **H3 (самоулучшение безопасно под human gate)** → Zelikman (STaR, бутстрэппинг), Madaan (Self-Refine, итеративная коррекция), Lightman (process supervision как механизм проверки на каждом шаге, снижающий риск ложного принятия).
+- **H1 (effort is predictable from activations)** → Cluster 1 (Ansuini, Facco/TwoNN) supplies the measurement method; Cluster 2 (MATH, Snell) supplies the empirical arena to test it.
+- **H2 (budgeting beats uniform/length-based)** → Snell (adaptive compute scaling) is the direct methodological predecessor; Wang (self-consistency) and Hendrycks (MATH) are the comparison baselines.
+- **H3 (self-improvement is safe under a human gate)** → Zelikman (STaR, bootstrapping), Madaan (Self-Refine, iterative correction), Lightman (process supervision as a per-step check that lowers the false-accept risk).
 
-## Замечание о полноте парсинга
+## Note on parsing completeness
 
-Первые 5 файлов (Ansuini, Facco, Hendrycks, Lightman, Madaan) разобраны полностью через `documentor` (структура, разделы, таблицы/рисунки закэшированы в `.documentor/`). Для остальных 8 в этом манифесте использованы аннотации из авторитетных источников (arXiv/NeurIPS/ICLR abstract pages) — при необходимости их тоже можно дочитать целиком через `get_paper.py --dir references <имя файла>`.
+The first 5 files (Ansuini, Facco, Hendrycks, Lightman, Madaan) were parsed in
+full via `documentor` (structure, sections, tables/figures cached in
+`.documentor/`). For the other 8, this manifest uses annotations from
+authoritative sources (arXiv/NeurIPS/ICLR abstract pages) — they can be read in
+full too if needed.

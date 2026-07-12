@@ -1,203 +1,349 @@
-# FrugalProver — детальный разбор пайплайна, вызовов и технологий
+# FrugalProver — detailed breakdown of the pipeline, calls, and technologies
 
-Синтез статьи-предложения + 13 источников литературы. Структура: сквозной поток данных → разбор каждого узла (назначение / нужные технологии / ключевые вызовы / что даёт литература) → сквозные риски проекта → итоговый стек → что источники НЕ закрывают (открытые дыры).
+A synthesis of the proposal paper + the 13 literature sources. Structure:
+end-to-end data flow → node-by-node breakdown (purpose / required technologies /
+key challenges / what the literature provides) → cross-cutting project risks →
+final stack → what the sources do NOT cover (open gaps).
 
 ---
 
-## 1. Сквозной поток данных
+## 1. End-to-end data flow
 
 ```
-задача x (условие теоремы/задачи)
+problem x (theorem / problem statement)
         │
         ▼
 ┌───────────────────┐
-│   BUDGET ORACLE O  │  ← φ(x) surface features + gℓ(x) активации малой модели
+│   BUDGET ORACLE O  │  ← φ(x) surface features + gℓ(x) small-model activations
 │  B̂(x) = fθ(φ,gℓ)  │
 └─────────┬──────────┘
-          │ бюджет B̂(x) (токены)
+          │ budget B̂(x) (tokens)
           ▼
 ┌───────────────────┐
-│      PROVER        │  генерирует кандидата-доказательство под капом B̂(x)
+│      PROVER        │  generates a candidate proof under the cap B̂(x)
 └─────────┬──────────┘
           │ candidate proof
           ▼
 ┌───────────────────┐
-│  VERIFIERS (k≥3)   │  ансамбль скептических проверяющих
+│  VERIFIERS (k≥3)   │  an ensemble of skeptical checkers
 └─────────┬──────────┘
-          │ concur? ──нет──┐
-          │ да             ▼
+          │ concur? ──no──┐
+          │ yes            ▼
           │         ┌─────────────┐
-          │         │  CORRECTOR   │  чинит найденные пробелы
+          │         │  CORRECTOR   │  repairs the gaps found
           │         └──────┬───────┘
-          │                │ (обратно к verifiers, цикл до согласия
-          │◄───────────────┘  либо до исчерпания бюджета)
+          │                │ (back to verifiers, loop until they concur
+          │◄───────────────┘  or the budget is exhausted)
           ▼
 ┌───────────────────┐
-│    HUMAN GATE       │  единственная точка ручного sign-off
+│    HUMAN GATE       │  the single point of manual sign-off
 └─────────┬──────────┘
           ▼
-   принятое доказательство
+   accepted proof
 
-Параллельно, offline:
+In parallel, offline:
 ┌───────────────────┐
-│   ORCHESTRATOR      │  предлагает новые тактики → sandbox-тест → деплой
+│   ORCHESTRATOR      │  proposes new tactics → sandbox-test → deploy
 └────────────────────┘
 ```
 
-Формально система решает задачу распределения ресурса:
-**max Σᵢ pᵢ(Bᵢ)** при **Σᵢ Bᵢ ≤ B_tot**, где pᵢ(B) — вероятность решить задачу i в пределах B токенов. Budget oracle предсказывает не сам факт решения, а сколько токенов стоит выделить, чтобы решить с наибольшей предельной отдачей.
+Formally, the system solves a resource-allocation problem:
+**max Σᵢ pᵢ(Bᵢ)** s.t. **Σᵢ Bᵢ ≤ B_tot**, where pᵢ(B) is the probability of
+solving problem i within B tokens. The budget oracle predicts not the fact of a
+solution but how many tokens to allocate for the greatest marginal return.
 
 ---
 
-## 2. Узел за узлом
+## 2. Node by node
 
 ### 2.1 Budget Oracle
 
-**Назначение.** Перед каждым вызовом backbone — оценить, сколько токенов задача "заслуживает", и выставить cap на генерацию.
+**Purpose.** Before each backbone call — estimate how many tokens the problem
+"deserves" and set a cap on generation.
 
-**Нужные технологии:**
-- Малая открытая модель для извлечения gℓ(x) — активаций некоторого промежуточного слоя ℓ на условии задачи (без полного решения, т.е. это forward-pass, а не генерация).
-- Экстрактор поверхностных признаков φ(x): длина условия, наличие спец. обозначений/LaTeX-конструкций, эвристический классификатор темы/раздела математики.
-- Метод сжатия/анализа геометрии активаций — оценка **intrinsic dimension** (эстиматор **TwoNN**, Facco et al. 2017) — активации трансформерного слоя имеют тысячи измерений, и сырую регрессию по ним переобучить легко; ID даёт компактную, устойчивую к кривизне сводку.
-- Лёгкая обучаемая голова fθ (probe: линейная/неглубокая MLP регрессия) поверх (φ, gℓ) → B̂(x), с онлайн-дообучением по мере поступления исходов.
+**Required technologies:**
+- A small open model to extract gℓ(x) — activations at some intermediate layer ℓ
+  on the problem statement (without a full solution, i.e. a forward pass, not
+  generation).
+- A surface-feature extractor φ(x): statement length, presence of special
+  notation / LaTeX constructs, a heuristic subject/topic classifier.
+- A method to compress/analyze the activation geometry — an **intrinsic
+  dimension** estimate (the **TwoNN** estimator, Facco et al. 2017). Transformer
+  activations have thousands of dimensions and a raw regression over them
+  overfits easily; ID gives a compact summary robust to curvature.
+- A light trainable head fθ (a probe: linear / shallow-MLP regression) on top of
+  (φ, gℓ) → B̂(x), updated online as outcomes accrue.
 
-**Ключевые вызовы:**
-1. **Выбор слоя ℓ и способа пулинга** активаций — не тривиален; неверный выбор может дать сигнал не сильнее длины текста.
-2. **Deconfounding с length-baseline.** Гипотеза H1 явно требует показать *дополнительную* информацию: I(gℓ; B*) > 0 сверх того, что уже даёт длина условия. Если этого не показать строго, весь смысл "предсказания по активациям" рушится.
-3. **Курица-и-яйцо в разметке.** Чтобы обучить fθ предсказывать "минимально достаточный бюджет" B*, нужны примеры (задача, B*) — а чтобы получить B* для одной задачи, нужно прогнать решатель на нескольких уровнях бюджета и найти минимальный успешный. Это дорого и само по себе требует бюджета, который проект пытается экономить.
-4. **Generalization gap.** Датасет калибровки — MATH (соревновательная, но всё же "школьная" олимпиадная математика); целевые "harder olympiad problems" может иметь другое распределение сложности, и активации, откалиброванные на MATH, не обязаны переноситься.
-5. **MI-оценка в высокой размерности** — сама по себе открытая статистическая проблема, не решённая явно ни в одном из 13 источников (см. раздел 4).
+**Key challenges:**
+1. **Choice of layer ℓ and pooling** of activations — non-trivial; the wrong
+   choice can give a signal no stronger than text length.
+2. **Deconfounding against a length baseline.** H1 explicitly requires showing
+   *additional* information: I(gℓ; B*) > 0 beyond what statement length already
+   gives. If this is not shown rigorously, the whole point of "prediction from
+   activations" collapses.
+3. **Chicken-and-egg in labeling.** To train fθ to predict the "minimally
+   sufficient budget" B*, you need (problem, B*) examples — and to get B* for one
+   problem you must run the solver at several budget levels and find the smallest
+   successful one. This is expensive and itself consumes the very budget the
+   project is trying to save.
+4. **Generalization gap.** The calibration dataset is MATH (competitive but still
+   "school" olympiad math); the target "harder olympiad problems" may have a
+   different difficulty distribution, and activations calibrated on MATH need not
+   transfer.
+5. **MI estimation in high dimension** — an open statistical problem in itself,
+   not solved explicitly by any of the 13 sources (see §4).
 
-**Что дают источники:**
-- *Ansuini 2019* — эмпирический прецедент: ID последнего скрытого слоя CNN предсказывает точность классификации на тесте. Прямая аналогия для гипотезы H1 (ID/геометрия представления ↔ успех) — но перенесённая из computer vision в LLM/математику, домен другой, полагаться на прямой перенос рискованно.
-- *Facco/TwoNN 2017* — конкретный инструмент измерения ID, устойчивый при малом числе точек и искривлённых многообразиях (то есть подходит и для не очень большого числа калибровочных задач).
-- *Snell 2024* — формализация "куда выгоднее потратить следующий токен" — именно эта работа даёт математическую рамку max ΣBᵢpᵢ(Bᵢ), которую статья цитирует напрямую (ссылка [7]).
+**What the sources provide:**
+- *Ansuini 2019* — an empirical precedent: the ID of a CNN's last hidden layer
+  predicts test classification accuracy. A direct analogy for H1
+  (representation ID/geometry ↔ success) — but carried over from computer vision
+  to LLMs/math; the domain differs, so relying on a direct transfer is risky.
+- *Facco/TwoNN 2017* — the concrete ID-measurement tool, robust at a small number
+  of points and on curved manifolds (i.e. suitable even for a modest number of
+  calibration problems).
+- *Snell 2024* — the formalization of "where the next token is best spent" — this
+  is the work giving the mathematical frame max ΣBᵢpᵢ(Bᵢ) that the paper cites
+  directly (reference [7]).
 
 ---
 
 ### 2.2 Prover
 
-**Назначение.** Сгенерировать кандидата-доказательство в пределах выданного бюджета.
+**Purpose.** Generate a candidate proof within the allotted budget.
 
-**Нужные технологии:**
-- Backbone с открытыми весами и "thinking mode" — GLM-4.5 / GLM-4.5-Air (Zeng et al. 2025), позволяющий переключаться между "думающим" и прямым режимом ответа.
-- Базовая техника генерации: **Chain-of-Thought prompting** (Wei et al. 2022) — пошаговые рассуждения через few-shot демонстрации.
-- Опционально — управляемый поиск вместо линейной генерации: **Tree-of-Thoughts** (Yao et al. 2023) — разветвление, самооценка промежуточных "мыслей", откат назад. Особенно ценно под жёстким бюджетом: вместо того чтобы потратить весь cap на один линейный путь, который может зайти в тупик, можно исследовать несколько ветвей и остановиться по бюджету на лучшей.
-- Вызов внешних инструментов: **Toolformer**-style self-supervised tool use (Schick et al. 2023) или **ReAct**-style чередование "рассуждение → действие → наблюдение" (Yao et al. 2023, ICLR) — для калькулятора, символьной алгебры, возможно интеграции с формальным ассистентом (Lean/Coq/Isabelle) для подкласса задач, где формальная проверка достижима.
-- Механизм cap-а генерации, завязанный на B̂(x) — контроль длины на уровне декодирования.
+**Required technologies:**
+- An open-weight backbone with a "thinking mode" — GLM-4.5 / GLM-4.5-Air (Zeng et
+  al. 2025), able to switch between a "thinking" and a direct-answer mode.
+- The base generation technique: **Chain-of-Thought prompting** (Wei et al.
+  2022) — step-by-step reasoning via few-shot demonstrations.
+- Optionally — guided search instead of linear generation: **Tree-of-Thoughts**
+  (Yao et al. 2023) — branching, self-evaluation of intermediate "thoughts",
+  backtracking. Especially valuable under a hard budget: instead of spending the
+  whole cap on one linear path that may hit a dead end, you can explore several
+  branches and stop at the best one when the budget runs out.
+- External tool calls: **Toolformer**-style self-supervised tool use (Schick et
+  al. 2023) or **ReAct**-style "reason → act → observe" interleaving (Yao et al.
+  2023, ICLR) — for a calculator, symbolic algebra, possibly integration with a
+  formal assistant (Lean/Coq/Isabelle) for the subclass of problems where formal
+  verification is reachable.
+- A generation-capping mechanism tied to B̂(x) — length control at the decoding
+  level.
 
-**Ключевые вызовы:**
-1. **Единый бюджет vs стратегия его траты.** При фиксированном B̂(x), что лучше: одна длинная попытка, несколько параллельных коротких с голосованием (**self-consistency**, Wang et al. 2022 — baseline в протоколе валидации), или древовидный поиск (ToT)? Это не решено заранее — как раз то, что призван показать эксперимент с baselines.
-2. **Solver держится offline** ("keeping the solver offline until an independent verifier validates each attempt") — прувер не дообучается через RL по ходу проекта, то есть весь прирост качества должен идти через промпт-инжиниринг/тактики (orchestrator), а не через веса. Это сильно ограничивает потолок качества за 2 недели.
-3. **Инструментальные вызовы едят бюджет** — вызов внешнего инструмента тоже стоит токенов на форматирование запроса/разбор ответа; наивная интеграция может свести на нет экономию.
+**Key challenges:**
+1. **A single budget vs the strategy for spending it.** Given a fixed B̂(x),
+   what's better: one long attempt, several short parallel ones with a vote
+   (**self-consistency**, Wang et al. 2022 — a baseline in the validation
+   protocol), or tree search (ToT)? This is not decided in advance — it's exactly
+   what the baseline experiment is meant to show.
+2. **The solver stays offline** ("keeping the solver offline until an
+   independent verifier validates each attempt") — the prover is not tuned via RL
+   during the project, so all quality gains must come through
+   prompting/tactics (the orchestrator), not through weights. This strongly caps
+   the achievable quality within two weeks.
+3. **Tool calls eat budget** — calling an external tool also costs tokens to
+   format the request / parse the response; a naive integration can wipe out the
+   savings.
 
-**Что дают источники:** Wei (CoT — база), Yao/ToT (поиск), Schick/Toolformer и Yao/ReAct (инструменты), Snell и Wang (что сравнивать при фиксированном компьюте).
+**What the sources provide:** Wei (CoT — the base), Yao/ToT (search),
+Schick/Toolformer and Yao/ReAct (tools), Snell and Wang (what to compare against
+at a fixed compute).
 
 ---
 
-### 2.3 Verifiers (ансамбль, k≥3)
+### 2.3 Verifiers (ensemble, k≥3)
 
-**Назначение.** Скептически проверить кандидата прежде, чем он дойдёт до corrector/human gate.
+**Purpose.** Skeptically check a candidate before it reaches the
+corrector/human gate.
 
-**Нужные технологии:**
-- Несколько независимых экземпляров-проверяющих: либо один backbone с разными промптами/seed'ами, либо (в идеале) отдельная **process reward model (PRM)** — модель, проверяющая *каждый шаг* рассуждения, а не только финальный ответ.
-- Правило агрегации решений k≥3 верификаторов (большинство? единогласие? взвешенное голосование?).
-- Раздельная стратегия верификации для двух типов задач: автоматическая проверка финального ответа (MATH, где ответ известен) vs верификация самой цепочки рассуждений (открытые олимпиадные задачи без "ответа-числа").
+**Required technologies:**
+- Several independent checker instances: either one backbone with different
+  prompts/seeds, or (ideally) a separate **process reward model (PRM)** — a model
+  that checks *every step* of the reasoning, not just the final answer.
+- An aggregation rule for the k≥3 verifiers' decisions (majority? unanimity?
+  weighted vote?).
+- A separate verification strategy for two problem types: automatic final-answer
+  checking (MATH, where the answer is known) vs verifying the reasoning chain
+  itself (open olympiad problems with no numeric "answer").
 
-**Ключевые вызовы:**
-1. **Пошаговая vs итоговая проверка.** *Lightman et al. 2024* эмпирически показывают: process supervision существенно превосходит outcome supervision (78% решённых задач на подвыборке MATH против заметно более слабого результата у outcome-only подхода). Но их PRM обучена на **PRM800K** — 800 тысяч размеченных людьми шагов. За 2 недели такой датасет не собрать; значит, FrugalProver почти наверняка вынужден использовать *промпт-инструктированного* LLM-судью вместо честно обученной PRM — а это качественно более слабый и шумный сигнал верификации.
-2. **Корреляция "независимых" верификаторов.** Если все k≥3 верификатора — это один и тот же backbone с разными seed'ами, их ошибки коррелированы (одни и те же слепые пятна модели), и ансамбль даёт куда меньше защиты, чем кажется по номинальному k.
-3. **Стоимость ансамбля.** Каждый дополнительный верификатор — это токены, вычитаемые из общего бюджета; растущий k напрямую конфликтует с метрикой "problems-solved-per-token".
-4. **Незавершающийся цикл.** "Loop iterates until verifiers concur" — нужен явный cap на число итераций, иначе цикл prover↔corrector↔verifiers может не сойтись в рамках бюджета задачи.
+**Key challenges:**
+1. **Step-level vs final-answer checking.** *Lightman et al. 2024* show
+   empirically that process supervision substantially beats outcome supervision
+   (78% of a MATH subset solved vs a markedly weaker outcome-only result). But
+   their PRM is trained on **PRM800K** — 800K human-labeled steps. Such a dataset
+   can't be built in two weeks, so FrugalProver will almost certainly have to use
+   a *prompt-instructed* LLM judge instead of an honestly-trained PRM — a
+   qualitatively weaker, noisier verification signal.
+2. **Correlation of "independent" verifiers.** If all k≥3 verifiers are the same
+   backbone with different seeds, their errors are correlated (the same model
+   blind spots), and the ensemble offers far less protection than the nominal k
+   suggests.
+3. **Ensemble cost.** Each extra verifier is tokens subtracted from the total
+   budget; a growing k directly conflicts with the "problems-solved-per-token"
+   metric.
+4. **Non-terminating loop.** "Loop iterates until verifiers concur" — an explicit
+   cap on the number of iterations is needed, or the prover↔corrector↔verifiers
+   loop may not converge within the problem's budget.
 
-**Что дают источники:** Lightman/PRM — прямая методологическая основа; косвенно — Snell/Wang дают контекст "верификация/голосование как ось test-time compute".
+**What the sources provide:** Lightman/PRM — the direct methodological basis;
+indirectly, Snell/Wang give the "verification/voting as an axis of test-time
+compute" context.
 
 ---
 
 ### 2.4 Corrector
 
-**Назначение.** Локально исправить найденные верификаторами пробелы, не перегенерируя доказательство с нуля.
+**Purpose.** Locally fix the gaps the verifiers found, without regenerating the
+proof from scratch.
 
-**Нужные технологии:**
-- Цикл **feedback → refine** в духе **Self-Refine** (Madaan et al. 2023): та же модель, что сгенерировала кандидата, использует критику (в идеале — от верификаторов, локализованную по шагам) и переписывает проблемные части.
-- Структурированный канал обратной связи от verifiers: важно, чтобы фидбэк указывал **конкретный шаг**, а не просто "неверно" — иначе corrector не отличается от повторной генерации с нуля.
+**Required technologies:**
+- A **feedback → refine** loop in the spirit of **Self-Refine** (Madaan et al.
+  2023): the same model that generated the candidate uses the critique (ideally
+  from the verifiers, localized per step) and rewrites the problematic parts.
+- A structured feedback channel from the verifiers: the feedback must point to a
+  **specific step**, not just say "wrong" — otherwise the corrector is no
+  different from regenerating from scratch.
 
-**Ключевые вызовы:**
-1. *Madaan et al.* показывают, что основной прирост от итеративного refine — в первых 1–2 итерациях, дальше отдача резко падает. Значит, разумно капать число итераций corrector'а низким числом, а не гонять цикл "до упора" — это прямо противоречит формулировке "loop iterates until verifiers concur" в исходной статье, если не добавить явный лимит.
-2. **Остаток бюджета.** Если prover исчерпал большую часть B̂(x), corrector'у может не хватить токенов на содержательный ремонт — нужна логика резервирования части бюджета заранее под коррекцию.
-3. **Осцилляция.** Без гарантии сходимости corrector может "чинить" одну ошибку, внося другую, и цикл будет прыгать между разными неверными версиями.
+**Key challenges:**
+1. *Madaan et al.* show that most of the gain from iterative refine is in the
+   first 1–2 iterations, after which returns drop sharply. So it's sensible to
+   cap the corrector's iterations low rather than loop "to the bitter end" —
+   which directly contradicts the original paper's "loop iterates until verifiers
+   concur" phrasing unless an explicit limit is added.
+2. **Remaining budget.** If the prover has used most of B̂(x), the corrector may
+   lack tokens for a meaningful repair — logic is needed to reserve part of the
+   budget for correction up front.
+3. **Oscillation.** Without a convergence guarantee, the corrector may "fix" one
+   error while introducing another, bouncing between wrong versions.
 
-**Что дают источники:** Madaan/Self-Refine — прямой алгоритмический прообраз (их Algorithm 1 буквально описывает цикл generate→feedback→refine со stop-условием — то же самое, что нужно corrector'у).
+**What the sources provide:** Madaan/Self-Refine — the direct algorithmic
+precursor (their Algorithm 1 literally describes a generate→feedback→refine loop
+with a stop condition — exactly what the corrector needs).
 
 ---
 
 ### 2.5 Human Gate
 
-**Назначение.** Единственная точка ручной проверки для кандидатов, прошедших всех verifiers.
+**Purpose.** The single point of manual review for candidates that passed all
+verifiers.
 
-**Нужные технологии (инженерные, не описаны в источниках напрямую):**
-- Интерфейс для просмотра кандидата + истории его проверки/коррекции.
-- Полное логирование всего пути задачи через пайплайн (явно указано в Goal G1 — "with complete logging") — нужно для аудита и для последующего анализа, где чаще всего ломается система.
+**Required technologies (engineering, not described in the sources directly):**
+- An interface to view the candidate + the history of its checking/correction.
+- Full logging of the entire path of a problem through the pipeline (stated
+  explicitly in Goal G1 — "with complete logging") — needed for auditing and for
+  later analysis of where the system most often breaks.
 
-**Ключевые вызовы:**
-1. Метрика "wrongly accepted proofs at the gate" подразумевает, что *даже человек* может пропустить ошибку — особенно на сложных олимпиадных задачах, где ревьюеру нужна экспертиза высокого уровня, а не просто внимательность.
-2. Human gate — это узкое горлышко масштабирования: если ансамбль верификаторов работает плохо, к человеку будет доходить слишком много кандидатов, и "the single point of human sign-off" перестаёт быть практичным при росте потока задач.
-3. Нужен протокол валидации через "well-known but tractable problems" (G3) — то есть контрольные задачи с независимо проверяемым ground truth, иначе нельзя откалибровать, насколько сам human gate надёжен.
-
----
-
-### 2.6 Orchestrator (самоулучшение)
-
-**Назначение.** Параллельно основному потоку — предлагать новые тактики решения/проверки, тестировать их в песочнице и деплоить, если они проходят валидацию.
-
-**Нужные технологии:**
-- Версионируемая библиотека тактик/промптов.
-- Изолированная sandbox-среда для тестирования новой тактики на held-out подвыборке задач до деплоя.
-- Статистический критерий "sandbox-validated" — нужен порог значимости прироста, иначе легко принять шумовое улучшение за реальное.
-- Бутстрэппинг в духе **STaR** (Zelikman et al. 2022): успешные, уже проверенные траектории решения становятся новыми few-shot примерами/тактиками для будущих попыток — устраняя необходимость в большом заранее размеченном датасете рассуждений.
-
-**Ключевые вызовы:**
-1. **Reward hacking / verifier gaming.** Это, пожалуй, самый серьёзный не до конца закрытый источниками риск: если orchestrator оптимизирует тактики против того же ансамбля верификаторов, что использует основной пайплайн, система рискует научиться не "решать лучше", а "убедительнее проходить проверку" — то есть эксплуатировать слепые пятна verifiers. Ни STaR, ни Self-Refine не рассматривают явно этот adversarial-режим (обе работы предполагают доброкачественный, не состязательный feedback).
-2. H3 явно формулирует это как гипотезу для проверки ("human gate prevents any rise in the rate of wrongly accepted proofs"), но не даёт готового механизма её обеспечения — это открытый инженерный вопрос: нужна ли ротация/разнообразие verifiers, периодический человеческий spot-check тактик, или что-то ещё.
-3. **Двухнедельный горизонт.** Полноценный цикл "предложить тактику → sandbox-тест на статистически значимой выборке → человеческое одобрение → деплой → замер эффекта" — это уже сам по себе многодневный процесс; втиснуть несколько таких раундов в 2 недели рядом с остальной системой — задача с очень плотным графиком.
-
-**Что дают источники:** Zelikman/STaR (бутстрэппинг), Madaan/Self-Refine (механизм итеративного улучшения); но, как отмечено — ни один не решает вопрос безопасности самоулучшающегося генератора против собственного верификатора.
+**Key challenges:**
+1. The "wrongly accepted proofs at the gate" metric implies that *even a human*
+   can miss an error — especially on hard olympiad problems, where the reviewer
+   needs high-level expertise, not just attentiveness.
+2. The human gate is a scaling bottleneck: if the verifier ensemble works poorly,
+   too many candidates reach the human, and "the single point of human sign-off"
+   stops being practical as the problem stream grows.
+3. A validation protocol via "well-known but tractable problems" (G3) is needed —
+   i.e. control problems with independently checkable ground truth, without which
+   you can't calibrate how reliable the human gate itself is.
 
 ---
 
-## 3. Сквозные (project-level) вызовы
+### 2.6 Orchestrator (self-improvement)
 
-1. **Плотность таймлайна.** Две недели на харнесс + budget-предиктор + аллокационные эксперименты (неделя 1) и на self-improvement + geometry/topology анализ (неделя 2) — притом что даже один из компонентов (например, честная PRM в духе Lightman) в оригинальной работе потребовал сотен тысяч размеченных примеров. Реалистичный масштаб — сильно урезанная версия каждого компонента.
-2. **Вычислительная стоимость backbone.** GLM-4.5 — 355B параметров (32B активных, MoE); даже compact GLM-4.5-Air — 106B. Прогон полного пайплайна (prover + k≥3 verifiers + corrector, возможно, в несколько раундов на каждую задачу) на таких моделях в пределах доступных вычислительных ресурсов проекта — нетривиальное логистическое ограничение, отдельное от алгоритмических вопросов.
-3. **Circular dependency в разметке бюджета** (см. 2.1, п.3) — данные для обучения oracle сами по себе требуют "лишнего" бюджета для сбора.
-4. **Определение "минимально достаточного бюджета" B*** неоднозначно: вероятность решения p(B) обычно не пороговая функция, а плавно растущая с шумом (в т.ч. из-за случайности сэмплирования) — значит, само определение целевой переменной для fθ требует статистического сглаживания/множественных прогонов.
-5. **Смешение доменов задач.** Кластер геометрии представлений (Ansuini/Facco) — из компьютерного зрения (CNN, изображения), тогда как применение — языковые модели и математический текст. Перенос интуиции о "hunchback"-профиле ID по слоям с CNN на трансформеры-решатели теорем — экстраполяция, не подтверждённая прямо ни одним из источников.
+**Purpose.** In parallel with the main flow — propose new solving/checking
+tactics, test them in a sandbox, and deploy them if they pass validation.
+
+**Required technologies:**
+- A versioned library of tactics/prompts.
+- An isolated sandbox environment for testing a new tactic on a held-out problem
+  subset before deployment.
+- A "sandbox-validated" statistical criterion — a significance threshold for the
+  improvement, or it's easy to accept a noise improvement as real.
+- Bootstrapping in the spirit of **STaR** (Zelikman et al. 2022): successful,
+  already-verified solution trajectories become new few-shot examples/tactics for
+  future attempts — removing the need for a large pre-labeled reasoning dataset.
+
+**Key challenges:**
+1. **Reward hacking / verifier gaming.** This is perhaps the most serious risk
+   not fully closed by the sources: if the orchestrator optimizes tactics against
+   the same verifier ensemble the main pipeline uses, the system risks learning
+   not to "solve better" but to "pass the check more convincingly" — i.e. to
+   exploit the verifiers' blind spots. Neither STaR nor Self-Refine explicitly
+   considers this adversarial regime (both assume benign, non-adversarial
+   feedback).
+2. H3 explicitly frames this as a hypothesis to test ("the human gate prevents
+   any rise in the rate of wrongly accepted proofs") but gives no ready mechanism
+   to ensure it — an open engineering question: do you need rotation/diversity of
+   verifiers, periodic human spot-checks of tactics, or something else?
+3. **The two-week horizon.** A full "propose a tactic → sandbox-test on a
+   statistically meaningful sample → human approval → deploy → measure the
+   effect" cycle is itself a multi-day process; fitting several such rounds into
+   two weeks alongside the rest of the system is a very tight schedule.
+
+**What the sources provide:** Zelikman/STaR (bootstrapping), Madaan/Self-Refine
+(the iterative-improvement mechanism); but, as noted, none solves the safety of a
+self-improving generator against its own verifier.
 
 ---
 
-## 4. Что источники НЕ закрывают (открытые дыры)
+## 3. Cross-cutting (project-level) challenges
 
-- **Оценка mutual information** I(gℓ; B*) в высокой размерности — статья формулирует это как часть гипотезы H1, но ни один из 13 источников не даёт готового робастного MI-эстиматора для этой конкретной постановки (TwoNN даёт ID, не MI).
-- **Адверсариальная динамика generator vs verifier** при самоулучшении (см. 2.6, п.1) — не покрыта ни STaR, ни Self-Refine, ни PRM-работой Lightman (все три предполагают благожелательного/неманипулятивного генератора).
-- **Формальная верификация** (Lean/Coq/Isabelle интеграция) упомянута в статье лишь косвенно через "tool use" (Toolformer/ReAct), но ни один из источников не описывает конкретно интеграцию LLM-прувера с формальным ассистентом для математики — это отдельный пласт работ (Metamath/GPT-f и подобные, которые в списке литературы отсутствуют, хотя косвенно упоминаются в MATH-статье как related work).
-- **Калибровка вероятностной оценки** p(B) и статистическая устойчивость её измерения (шум сэмплирования, multiple testing при выборе "минимального успешного бюджета") — методологический вопрос, не разобранный ни в одной из работ впрямую.
+1. **Timeline density.** Two weeks for the harness + budget predictor +
+   allocation experiments (week 1) and for self-improvement + geometry/topology
+   analysis (week 2) — when even a single component (e.g. an honest PRM à la
+   Lightman) required hundreds of thousands of labeled examples in the original
+   work. A realistic scale is a heavily trimmed version of each component.
+2. **Backbone compute cost.** GLM-4.5 is 355B parameters (32B active, MoE); even
+   the compact GLM-4.5-Air is 106B. Running the full pipeline (prover + k≥3
+   verifiers + corrector, possibly over several rounds per problem) on such models
+   within the project's available compute is a non-trivial logistical
+   constraint, separate from the algorithmic questions.
+3. **Circular dependency in budget labeling** (see 2.1, point 3) — the data to
+   train the oracle itself requires "extra" budget to collect.
+4. **The definition of the "minimally sufficient budget" B*** is ambiguous: the
+   solve probability p(B) is usually not a step function but a smoothly rising,
+   noisy one (partly due to sampling randomness) — so defining the target
+   variable for fθ requires statistical smoothing / multiple runs.
+5. **Mixing of problem domains.** The representation-geometry cluster
+   (Ansuini/Facco) is from computer vision (CNNs, images), whereas the
+   application is language models and mathematical text. Transferring the
+   "hunchback" ID-vs-depth intuition from CNNs to theorem-proving transformers is
+   an extrapolation not directly confirmed by any of the sources.
 
 ---
 
-## 5. Итоговый стек технологий
+## 4. What the sources do NOT cover (open gaps)
 
-| Слой | Технология | Источник |
+- **Mutual-information estimation** I(gℓ; B*) in high dimension — the paper
+  frames this as part of H1, but none of the 13 sources provides a ready robust
+  MI estimator for this specific setting (TwoNN gives ID, not MI).
+- **The adversarial generator-vs-verifier dynamic** during self-improvement (see
+  2.6, point 1) — not covered by STaR, Self-Refine, or Lightman's PRM work (all
+  three assume a benign/non-manipulative generator).
+- **Formal verification** (Lean/Coq/Isabelle integration) is mentioned in the
+  paper only indirectly via "tool use" (Toolformer/ReAct), but none of the
+  sources describes a concrete integration of an LLM prover with a formal math
+  assistant — a separate body of work (Metamath/GPT-f and the like, absent from
+  the reference list though indirectly mentioned as related work in the MATH
+  paper).
+- **Calibration of the probability estimate** p(B) and the statistical
+  robustness of measuring it (sampling noise, multiple testing when choosing the
+  "minimal successful budget") — a methodological issue not addressed directly by
+  any of the works.
+
+---
+
+## 5. Final technology stack
+
+| Layer | Technology | Source |
 |---|---|---|
-| Backbone LLM | GLM-4.5 / GLM-4.5-Air (открытые веса, thinking mode) | Zeng et al. 2025 |
-| Генерация рассуждений | Chain-of-Thought prompting | Wei et al. 2022 |
-| Поиск по рассуждениям (опц.) | Tree-of-Thoughts | Yao et al. 2023 (NeurIPS) |
-| Вызов инструментов | Toolformer / ReAct-паттерн | Schick et al. 2023; Yao et al. 2023 (ICLR) |
-| Голосование/сэмплирование (baseline) | Self-Consistency | Wang et al. 2022 |
-| Аллокация бюджета | Compute-optimal test-time scaling формализация | Snell et al. 2024 |
-| Верификация | Process-level проверка (PRM-подход) | Lightman et al. 2023 |
-| Самокоррекция | Self-Refine (feedback→refine цикл) | Madaan et al. 2023 |
-| Самоулучшение | STaR-бутстрэппинг тактик | Zelikman et al. 2022 |
-| Геометрия представлений | Intrinsic Dimension анализ | Ansuini et al. 2019 |
-| ID-эстиматор | TwoNN | Facco et al. 2017 |
-| Бенчмарк | MATH dataset + сложные олимпиадные задачи | Hendrycks et al. 2021 |
-| Инфраструктура (не из источников) | sandbox для тактик, полное логирование, human-review интерфейс, harness для многораундовых прогонов | — |
+| Backbone LLM | GLM-4.5 / GLM-4.5-Air (open weights, thinking mode) | Zeng et al. 2025 |
+| Reasoning generation | Chain-of-Thought prompting | Wei et al. 2022 |
+| Reasoning search (opt.) | Tree-of-Thoughts | Yao et al. 2023 (NeurIPS) |
+| Tool calls | Toolformer / ReAct pattern | Schick et al. 2023; Yao et al. 2023 (ICLR) |
+| Voting/sampling (baseline) | Self-Consistency | Wang et al. 2022 |
+| Budget allocation | Compute-optimal test-time scaling formalization | Snell et al. 2024 |
+| Verification | Process-level checking (PRM approach) | Lightman et al. 2023 |
+| Self-correction | Self-Refine (feedback→refine loop) | Madaan et al. 2023 |
+| Self-improvement | STaR tactic bootstrapping | Zelikman et al. 2022 |
+| Representation geometry | Intrinsic Dimension analysis | Ansuini et al. 2019 |
+| ID estimator | TwoNN | Facco et al. 2017 |
+| Benchmark | MATH dataset + harder olympiad problems | Hendrycks et al. 2021 |
+| Infrastructure (not from sources) | tactic sandbox, full logging, human-review interface, harness for multi-round runs | — |
