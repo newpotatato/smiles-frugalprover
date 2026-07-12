@@ -12,7 +12,8 @@ import json
 import random
 import sys
 from collections import defaultdict
-from pathlib import Path
+
+from frugalprover.paths import DATA_DIR
 
 SEED = 0
 
@@ -22,7 +23,7 @@ def main():
     n_parts = int(sys.argv[2]) if len(sys.argv) > 2 else 3
 
     random.seed(SEED)
-    src = Path(__file__).parent / src_name
+    src = DATA_DIR / src_name
     data = json.loads(src.read_text(encoding="utf-8"))
     stem = src.stem  # e.g. "math_pool_large" -> parts named math_pool_large_part1.json
 
@@ -43,7 +44,7 @@ def main():
             counter += 1
 
     for i, part in enumerate(parts, start=1):
-        out_path = Path(__file__).parent / f"{stem}_part{i}.json"
+        out_path = DATA_DIR / f"{stem}_part{i}.json"
         out_path.write_text(json.dumps(part, ensure_ascii=False, indent=2), encoding="utf-8")
         levels = {lv: sum(1 for r in part if r["level_num"] == lv) for lv in sorted(set(r["level_num"] for r in part))}
         types = {t: sum(1 for r in part if r["type"] == t) for t in sorted(set(r["type"] for r in part))}

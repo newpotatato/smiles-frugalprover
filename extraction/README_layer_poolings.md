@@ -17,15 +17,15 @@ Everything is written to a single Parquet file, one row per problem.
 
 | Path | What it is |
 |---|---|
-| [`notebooks/generate_hidden_states.ipynb`](notebooks/generate_hidden_states.ipynb) | The pipeline. Runs on a Colab GPU: install → config → load model → sample MATH → extract → save Parquet. |
+| [`generate_hidden_states.ipynb`](generate_hidden_states.ipynb) | The pipeline. Runs on a Colab GPU: install → config → load model → sample MATH → extract → save Parquet. |
 | [`configs/config.example.yaml`](configs/config.example.yaml) | Annotated template config. Documents every field, pooling type, and geometry metric. |
 | [`configs/Qwen1_5B_math_mid_mean.yaml`](configs/Qwen1_5B_math_mid_mean.yaml) | Config tuned for predicting problem hardness with `Qwen2.5-Math-1.5B` (mid/late/final layers). |
-| [`data/Qwen1_5B_math_mid_mean.parquet`](data/Qwen1_5B_math_mid_mean.parquet) | Output produced by the config above: 200 algebra problems × 3 pooled + 6 geometry features. |
+| [`../data/Qwen1_5B_math_mid_mean.parquet`](../data/Qwen1_5B_math_mid_mean.parquet) | Output produced by the config above: 200 algebra problems × 3 pooled + 6 geometry features. |
 | [`WORKING_WITH_PARQUET.md`](WORKING_WITH_PARQUET.md) | How to load the Parquet and use it (schema, stacking pooled columns into matrices, probes, caveats). |
 
 ## Quick start
 
-1. Open [`notebooks/generate_hidden_states.ipynb`](notebooks/generate_hidden_states.ipynb) in Colab and set the runtime to **GPU** (`Runtime → Change runtime type → GPU`).
+1. Open [`generate_hidden_states.ipynb`](generate_hidden_states.ipynb) in Colab and set the runtime to **GPU** (`Runtime → Change runtime type → GPU`).
 2. Pick a config:
    - Edit the inline `CONFIG` dict (cell 4), **or**
    - Set `USE_YAML = True` and upload a YAML (e.g. `configs/Qwen1_5B_math_mid_mean.yaml`) to `YAML_PATH`.

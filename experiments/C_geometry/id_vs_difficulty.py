@@ -52,7 +52,7 @@ from scipy.stats import spearmanr
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
-from twonn import mle_dimension, twonn_dimension
+from frugalprover.id_estimators import mle_dimension, twonn_dimension
 
 MIN_GROUP_SIZE = 10  # TwoNN/MLE need a reasonable number of points per level bucket
 K_NEIGHBORS = 5

@@ -20,13 +20,14 @@ Run locally, after downloading each person's/tier's output:
 """
 import json
 import sys
-from pathlib import Path
+
+from frugalprover.paths import DATA_DIR
 
 
 def main():
     inputs = sys.argv[1:]
     if not inputs:
-        inputs = sorted(str(p) for p in Path(__file__).parent.glob("pilot_*_part*.jsonl"))
+        inputs = sorted(str(p) for p in DATA_DIR.glob("pilot_*_part*.jsonl"))
     if not inputs:
         print("no pilot_<mode>_part*.jsonl files found -- pass paths explicitly")
         return
@@ -51,7 +52,7 @@ def main():
         per_file_new_ids[path] = new_ids
         print(f"  {path}: introduced {new_ids} new ids (total so far: {len(merged)})")
 
-    out_path = Path(__file__).parent / "pilot_results.jsonl"
+    out_path = DATA_DIR / "pilot_results.jsonl"
     with open(out_path, "w", encoding="utf-8") as f:
         for pid in sorted(merged):
             f.write(json.dumps(merged[pid]) + "\n")

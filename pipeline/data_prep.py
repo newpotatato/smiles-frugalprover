@@ -21,9 +21,10 @@ Output:
 import json
 import random
 import re
-from pathlib import Path
 
 from datasets import load_dataset
+
+from frugalprover.paths import DATA_DIR
 
 SUBJECTS = [
     "algebra",
@@ -89,7 +90,7 @@ def main():
         m = re.search(r"\d+", row["level"])
         row["level_num"] = int(m.group()) if m else None
 
-    large_path = Path(__file__).parent / "math_pool_large.json"
+    large_path = DATA_DIR / "math_pool_large.json"
     large_path.write_text(json.dumps(large_pool, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # --- 2. labeling subset: stratified sample drawn FROM the large pool, same ids ---
@@ -105,7 +106,7 @@ def main():
     random.shuffle(labeling_subset)
     labeling_subset = labeling_subset[:TARGET_N_LABEL]
 
-    label_path = Path(__file__).parent / "math_labeling_subset.json"
+    label_path = DATA_DIR / "math_labeling_subset.json"
     label_path.write_text(json.dumps(labeling_subset, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"Wrote {len(large_pool)} problems to {large_path}")

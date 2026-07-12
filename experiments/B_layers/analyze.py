@@ -54,7 +54,7 @@ from sklearn.linear_model import RidgeCV
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
 from sklearn.preprocessing import StandardScaler
 
-from twonn import twonn_dimension
+from frugalprover.id_estimators import twonn_dimension
 
 PHI_KEYS = ["char_len", "word_len", "latex_cmd_count", "dollar_count",
             "brace_depth", "digit_count", "eq_count"]

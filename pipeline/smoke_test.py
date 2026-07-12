@@ -8,7 +8,6 @@ sanity checks only -- not expected to solve any real math.
 """
 import json
 import re
-from pathlib import Path
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -93,7 +92,7 @@ def test_grading():
 
 
 def test_pipeline_mechanics():
-    subset_path = Path(__file__).parent / "math_pool_large.json"
+    subset_path = DATA_DIR / "math_pool_large.json"
     problems = json.loads(subset_path.read_text(encoding="utf-8"))[:2]
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)

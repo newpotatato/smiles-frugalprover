@@ -25,4 +25,14 @@ _package_staging/
 # these are regenerated locally/in Colab and shared out-of-band (Drive/LFS),
 # not committed. Plots (*.png) and the fitted oracle_model.joblib are small
 # and ARE tracked -- only the raw per-problem activation dumps are excluded.
-pilot/pilot_*.jsonl
+# These land in data/ (merge_results.py reads them from there and writes
+# data/pilot_results.jsonl, which is likewise a large regenerable artifact).
+data/pilot_*.jsonl
+
+# Editable-install / build metadata
+src/*.egg-info/
+*.egg-info/
+build/
+
+# LaTeX build output for the slide deck (regenerable from frugalprover.tex).
+slides/out/
