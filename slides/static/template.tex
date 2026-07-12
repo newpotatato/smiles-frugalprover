@@ -1,0 +1,216 @@
+% ============================================================
+%  HSE University — Beamer Presentation Template
+%  Resolution  : 1920 × 1080  (aspectratio=169)
+%  Compiler    : pdfLaTeX  (Overleaf)
+%  Theme file  : hse.sty  (must be in the same folder)
+% ============================================================
+\documentclass[aspectratio=169,12pt,t]{beamer}
+
+% ── Russian language support ─────────────────────────────────
+\usepackage{cmap}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english,russian]{babel}
+
+% ── HSE theme ────────────────────────────────────────────────
+\usepackage{hse}
+
+\setbeamertemplate{headline}[hse theme]
+\setbeamertemplate{frametitle}[hse theme]
+\setbeamertemplate{footline}[hse theme]
+
+% ── Override localisation macros (now UTF-8 is active) ───────
+\renewcommand{\LogoPlaceholderText}{ВШЭ\,/\,HSE\\LOGO}
+\renewcommand{\ThankYouText}{Спасибо!}
+\renewcommand{\ContactsText}{Контакты}
+\renewcommand{\FeedbackText}{Отзыв о докладе}
+
+% ── Additional packages ───────────────────────────────────────
+\usepackage{qrcode}   % QR codes on the final slide
+
+% ============================================================
+%  PRESENTATION METADATA — fill in before use
+% ============================================================
+\newcommand{\EventName}{Название конференции}
+\newcommand{\EventLocation}{Москва, Россия}
+\newcommand{\PresentationTitle}{Заголовок презентации}
+\newcommand{\PresentationSubtitle}{Подзаголовок или краткое описание темы}
+\newcommand{\AuthorName}{Иван Иванович Иванов}
+\newcommand{\AuthorRole}{Доцент, Факультет компьютерных наук}
+\newcommand{\AuthorAffiliation}{НИУ ВШЭ — Высшая школа экономики}
+\newcommand{\PresentationDate}{16 апреля 2026}
+
+% Text shown in the footer (left side)
+\renewcommand{\FooterLeft}{\AuthorName\ \textbullet\ \AuthorAffiliation}
+
+% URLs for the final slide QR codes
+\newcommand{\ContactURL}{https://example.com/contact}
+\newcommand{\FeedbackURL}{https://forms.gle/example}
+
+% ── Logo ─────────────────────────────────────────────────────
+% To use a real logo, uncomment and edit the line below,
+% then comment out or redefine \logobox in hse.sty:
+%
+%   \renewcommand{\logobox}{\includegraphics[height=1.2cm]{hse-logo}}
+%
+% The logo file (e.g. hse-logo.pdf) must be in the same folder.
+
+% ============================================================
+\begin{document}
+
+% ── TITLE SLIDE ──────────────────────────────────────────────
+\begin{frame}[plain,noframenumbering]
+  \titlepage
+\end{frame}
+
+% ── TABLE OF CONTENTS ────────────────────────────────────────
+% [nonavbar] keeps this slide out of the nav-bar dots
+\begin{frame}[nonavbar]{Содержание}
+  \tableofcontents
+\end{frame}
+
+% ============================================================
+\section{Введение}
+% ============================================================
+
+\begin{frame}{Обычный слайд}
+  Это стандартный слайд. Навигационная шапка вверху показывает
+  все разделы; активный раздел выделен жёлтой плашкой.
+  Заголовок фрейма отделён от шапки тонкой жёлтой полосой.
+
+  \begin{itemize}
+    \item Пункт списка первый
+    \item Пункт списка второй
+    \item Пункт списка третий
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Выделения и акцентные блоки}
+  Встроенное красное выделение работает в обычном тексте:
+  \emred{это важный фрагмент} и продолжение предложения.
+
+  В формулах тоже работает:
+  \[
+    E = \emred{mc^2}, \qquad F = \emred{ma}
+  \]
+
+  \begin{emphblock}{Ключевой результат}
+    Самостоятельный блок с красной рамкой — для определений,
+    теорем, главных выводов или предупреждений.
+  \end{emphblock}
+\end{frame}
+
+\begin{frame}{Стандартные блоки Beamer}
+  \begin{block}{Обычный блок}
+    Используется для нейтральных пояснений.
+  \end{block}
+
+  \begin{alertblock}{Предупреждение}
+    Используется для ошибок или критически важных замечаний.
+  \end{alertblock}
+
+  \begin{exampleblock}{Пример}
+    Используется для иллюстраций или демонстраций.
+  \end{exampleblock}
+\end{frame}
+
+% ── Section divider ──────────────────────────────────────────
+\sectionslide{Методология}
+
+% ============================================================
+\section{Методология}
+% ============================================================
+
+\begin{frame}{Одно изображение по центру}
+  % \oneimage{файл}{подпись}{ширина}
+  \oneimage{example-image-a}{Рисунок 1. Описание изображения}{0.58\textwidth}
+\end{frame}
+
+\begin{frame}{Два изображения рядом}
+  % \twoimages{лево}{подпись лево}{право}{подпись право}
+  \twoimages
+    {example-image-a}{Рисунок 1. Левая подпись}
+    {example-image-b}{Рисунок 2. Правая подпись}
+\end{frame}
+
+\begin{frame}{Сетка 2×2}
+  % \fourgrid{img1}{cap1}{img2}{cap2}{img3}{cap3}{img4}{cap4}
+  \fourgrid
+    {example-image-a}{Верхний левый}
+    {example-image-b}{Верхний правый}
+    {example-image-c}{Нижний левый}
+    {example-image}  {Нижний правый}
+\end{frame}
+
+\begin{frame}{Изображение и текст}
+  % \imagewithtext{файл}{содержимое правой колонки}
+  \imagewithtext{example-image-a}{%
+    \textbf{Ключевые наблюдения}
+    \begin{itemize}
+      \item Первое важное наблюдение из рисунка
+      \item Второй вывод с пояснением
+      \item Перспективы дальнейшего анализа
+    \end{itemize}
+  }
+\end{frame}
+
+% ── Section divider ──────────────────────────────────────────
+\sectionslide{Результаты}
+
+% ============================================================
+\section{Результаты}
+% ============================================================
+
+\begin{frame}{Два столбца}
+  % \twocols{левый контент}{правый контент}
+  \twocols{%
+    \textbf{Теоретическая часть}\\[6pt]
+    Произвольный контент: текст,
+    формулы, списки.
+    \[
+      \sum_{k=1}^{n} k = \frac{n(n+1)}{2}
+    \]
+  }{%
+    \textbf{Практическая часть}\\[6pt]
+    \begin{itemize}
+      \item Эксперимент~A
+      \item Эксперимент~B
+      \item Эксперимент~C
+    \end{itemize}
+  }
+\end{frame}
+
+% [nonavbar] — слайд не регистрируется в навигационных точках
+\begin{frame}[nonavbar]{Резервный слайд (без точки в шапке)}
+  \framesubtitle{Опция \texttt{[nonavbar]}}
+  Этот фрейм не получает точку в навигационной полосе.
+  Подходит для резервных, вспомогательных или переходных слайдов,
+  которые не должны загромождать навигацию.
+\end{frame}
+
+% ── Section divider ──────────────────────────────────────────
+\sectionslide{Заключение}
+
+% ============================================================
+\section{Заключение}
+% ============================================================
+
+\begin{frame}{Выводы}
+  \begin{emphblock}{Главный результат}
+    Краткая формулировка основного итога работы,
+    видимая с последнего ряда аудитории.
+  \end{emphblock}
+
+  \begin{enumerate}
+    \item Первый подтверждённый вывод
+    \item Второй вывод с количественной оценкой
+    \item Направления дальнейших исследований
+  \end{enumerate}
+\end{frame}
+
+% ── FINAL SLIDE ──────────────────────────────────────────────
+\begin{frame}[plain,noframenumbering]
+  \finalslide{\ContactURL}{\FeedbackURL}
+\end{frame}
+
+\end{document}

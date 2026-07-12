@@ -1,0 +1,403 @@
+% ============================================================
+%  HSE University — Beamer Presentation
+%  FrugalProver — Math agents that learn their own compute budget
+% ============================================================
+\documentclass[aspectratio=169,12pt,t,compress]{beamer}
+
+% ── Language support ─────────────────────────────────────────
+\usepackage{cmap}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian,english]{babel}
+
+\usepackage{amsmath, amssymb, amsthm}
+
+% ── HSE theme ────────────────────────────────────────────────
+\usepackage{static/hse}
+
+% ── Plotting / diagrams ──────────────────────────────────────
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{positioning, arrows.meta, fit, backgrounds, shapes.geometric, calc}
+
+\setbeamertemplate{headline}[hse theme]
+\setbeamertemplate{frametitle}[hse theme]
+\setbeamertemplate{footline}[hse theme]
+
+% ── Localisation macros (English) ────────────────────────────
+\renewcommand{\LogoPlaceholderText}{HSE\\LOGO}
+\renewcommand{\ThankYouText}{Thank you — questions?}
+\renewcommand{\ContactsText}{Telegram}
+\renewcommand{\FeedbackText}{Github}
+
+% ── Additional packages ──────────────────────────────────────
+\usepackage{qrcode}
+\usepackage{booktabs}
+\usepackage{colortbl}
+\usepackage{graphicx}
+\usepackage{pifont}
+
+% ============================================================
+%  PRESENTATION METADATA
+% ============================================================
+\newcommand{\EventName}{SMILES 2026}
+\newcommand{\EventLocation}{Online}
+\newcommand{\PresentationTitle}{FrugalProver}
+\newcommand{\PresentationSubtitle}{Math agents that learn their own compute budget}
+\newcommand{\AuthorName}{Chernikov, Chekueva, Leontiev, Smirnova}
+\newcommand{\AuthorRole}{}
+\newcommand{\AuthorAffiliation}{}
+\newcommand{\PresentationDate}{2026}
+
+\renewcommand{\FooterLeft}{\AuthorName\ \textbullet\ FrugalProver}
+
+\newcommand{\ContactURL}{https://t.me/michlea\_tg}
+\newcommand{\FeedbackURL}{https://github.com/newpotatato/smiles-frugalprover}
+
+% ── Reusable tikz styles ─────────────────────────────────────
+\tikzset{
+  textbox/.style   = {draw=HSEBlue, fill=HSEBlueTint, rounded corners=3pt,
+                      align=center, inner sep=6pt, font=\small},
+  numbox/.style    = {draw=HSEGreen, fill=HSEGreen!10, rounded corners=3pt,
+                      align=center, inner sep=6pt, font=\small\ttfamily},
+  blackbox/.style  = {draw=HSEBlueDark, fill=HSEBlueDark, text=white,
+                      rounded corners=3pt, align=center, inner sep=8pt,
+                      font=\small\bfseries},
+  decision/.style  = {draw=HSERed, fill=HSERed!10, rounded corners=3pt,
+                      align=center, inner sep=6pt, font=\small\bfseries},
+  flow/.style      = {-{Stealth[length=3mm]}, line width=1pt, HSEGray},
+}
+
+\newcommand{\good}[1]{\cellcolor{HSEGreen!18}#1}
+\newcommand{\bad}[1]{\cellcolor{HSERed!12}#1}
+
+% ============================================================
+\begin{document}
+
+% ── TITLE SLIDE ──────────────────────────────────────────────
+\begin{frame}[plain,noframenumbering]
+	\titlepage
+\end{frame}
+
+% ── TABLE OF CONTENTS ────────────────────────────────────────
+\begin{frame}{Outline}
+	\tableofcontents
+\end{frame}
+
+% ============================================================
+\section{Problem \& hypothesis}
+\sectionslide{Problem \& hypothesis}
+% ============================================================
+
+\begin{frame}{The problem}
+	Modern LLMs can solve hard math problems --- but:
+
+	\vspace{0.5em}
+	\begin{itemize}
+		\item at \textbf{large, unpredictable cost}, and
+		\item with \textbf{errors that are hard to detect}.
+	\end{itemize}
+
+	\vspace{0.6em}
+	The same effort is spent on a trivial problem and an olympiad one, with no
+	honest signal of when to stop.
+\end{frame}
+
+% ------------------------------------------------------------
+\begin{frame}{The core bet}
+	Can we predict, \textbf{before} attempting a proof, how much effort it deserves?
+
+	\vspace{0.3em}
+	\begin{block}{H1}
+		\small
+		The token budget $B^*$ a proof warrants can be predicted from a
+		\textbf{small model's} internal activations $g_\ell(x)$ (plus surface
+		features $\varphi(x)$), even though $B^*$ is defined w.r.t. a
+		\textbf{larger prover}.
+	\end{block}
+
+	\vspace{-0.2em}
+	\[
+		\hat{B}(x) = f_\theta\!\left(\varphi(x),\, g_\ell(x)\right)
+	\]
+
+	\vspace{-0.2em}
+	\textbf{The linchpin is cross-model.} The signal comes from a cheap model
+	that only \emph{reads} the statement; the budget belongs to the prover that
+	\emph{writes} the proof --- the non-obvious claim, and the first thing we try
+	to falsify.
+\end{frame}
+
+% ============================================================
+\section{Plan}
+\sectionslide{Plan --- go/no-go phases}
+% ============================================================
+
+\begin{frame}{Plan --- organized as go/no-go phases}
+	Each phase's result decides whether the next is worth running.
+	\textbf{We do not build allocation or self-improvement until H1 clears.}
+
+	\vspace{0.5em}
+	\begin{center}
+		\small
+		\renewcommand{\arraystretch}{1.25}
+		\begin{tabular}{c l l}
+			\toprule
+			\textbf{Phase} & \textbf{Hypothesis}            & \textbf{Cost}        \\
+			\midrule
+			\textbf{0}     & Harness + $B^*$ labels (truth) & cheap                \\
+			\textbf{1}     & \good{H1 --- effort predictable (\emph{the gate})} & cheap    \\
+			\textbf{2}     & H2 --- allocation improves efficiency & conditional on H1 \\
+			\textbf{3}     & H3 --- safe self-improvement   & conditional on H2    \\
+			\textbf{4}     & Geometry \& topology of difficulty & parallel analysis \\
+			\bottomrule
+		\end{tabular}
+	\end{center}
+
+	\vspace{0.4em}
+	\footnotesize Cheapest-first; everything logged from day one (traces,
+	per-agent tokens, seeds, model hashes).
+\end{frame}
+
+% ------------------------------------------------------------
+\begin{frame}{Phase 0 --- ground-truth budget labels}
+	\textbf{Goal.} For a stratified MATH subset, produce the empirical budget
+	$B^*_i$ a successful attempt warrants --- the regression target for H1.
+
+	\vspace{0.4em}
+	\textbf{Define $B^*$ (pre-registered):}
+	\begin{itemize}\small
+		\item \emph{Threshold (recommended):} estimate $p_i(B)$ by sampling at
+		      rising caps; $B^*_i = \min\{\, B : \hat{p}_i(B) \ge \tau \,\}$,
+		      $\tau = 0.5$, denoised by a logistic fit in $\log B$.
+		\item \emph{First-correct (cheaper, noisier):} median length of the first
+		      correct sample --- smoke-test only.
+	\end{itemize}
+
+	\vspace{0.3em}
+	\textbf{Setup.} Prover: GLM-4.5-Air via vLLM (or 7--14B if GPU-tight).
+	Activation model $g_\ell$: Qwen2.5-7B / GLM-4-9B --- encodes the statement only.
+
+	\vspace{0.2em}
+	\footnotesize\textbf{Deliverable:} $\bigl(\text{problem},\ \varphi(x),\ g_\ell(x)\text{/layer},\ B^*,\ \text{solved?},\ \text{trace}\bigr)$.
+\end{frame}
+
+% ------------------------------------------------------------
+\begin{frame}{Phase 1 --- H1: the go/no-go}
+	\footnotesize\textbf{Goal.} Show $g_\ell\,(+\varphi)$ predicts $B^*$ better
+	than a length baseline, and that $\hat{I}(g_\ell; B^*) > 0$.
+
+	\vspace{0.2em}
+	\begin{columns}[T]
+		\begin{column}{0.47\textwidth}
+			\footnotesize
+			\textbf{The core comparison}
+			\renewcommand{\arraystretch}{1.05}
+			\begin{tabular}{c l}
+				\toprule
+				\# & \textbf{Features} \\
+				\midrule
+				1 & Length only \\
+				2 & Surface $\varphi$ only \\
+				3 & Activations $g_\ell$ only \\
+				4 & \good{Combined $\varphi + g_\ell$} \\
+				5 & + informative-layer selection \\
+				6 & Ceilings (level; self-pred.) \\
+				\bottomrule
+			\end{tabular}
+		\end{column}
+		\begin{column}{0.53\textwidth}
+			\footnotesize
+			\textbf{Metrics.} MAE/RMSE on $\log B^*$, calibration, Spearman
+			rank; $\hat{I}(g_\ell; B^*)$ vs a \textbf{label-shuffled control} with
+			CIs; downstream --- cap the prover at $\hat{B}(x)$, tokens saved vs
+			accuracy retained.
+		\end{column}
+	\end{columns}
+
+	\vspace{0.2em}
+	\begin{alertblock}{Gate}
+		\footnotesize
+		Proceed only if $\varphi + g_\ell$ beats length on error \textbf{and} the
+		success-vs-compute curve, $\hat{I}$ clearly above shuffle. Otherwise: a
+		clean, publishable negative result.
+	\end{alertblock}
+\end{frame}
+
+% ------------------------------------------------------------
+\begin{frame}{Phase 2 --- H2: allocation}
+	\textbf{Goal.} Use $\hat{B}(x)$ to spend a \textbf{fixed total} budget better
+	than uniform/length --- lifting the \emph{entire} success-vs-compute curve.
+
+	\vspace{0.4em}
+	\begin{itemize}\small
+		\item \textbf{Method.} Fit per-problem $p_i(B)$; allocate greedily by
+		      marginal gain $dp/dB$ under $\sum_i B_i \le B_\text{tot}$. Run with
+		      predicted $\hat{B}$ \textbf{and} oracle $B^*$ --- the gap is the
+		      cost of prediction error.
+		\item \textbf{Also validated here:} the multi-agent loop --- ablate
+		      verifier count ($k = 1/3/5$), corrector on/off, track
+		      wrongly-accepted-proof rate vs compute.
+	\end{itemize}
+
+	\vspace{0.3em}
+	\begin{alertblock}{Gate}
+		\footnotesize
+		Budget-aware allocation should Pareto-dominate baselines across the
+		sweep. If predicted-$\hat{B}$ collapses toward the oracle line, the probe
+		is production-worthy.
+	\end{alertblock}
+\end{frame}
+
+% ------------------------------------------------------------
+\begin{frame}{Phase 3 --- H3: safe self-improvement}
+	\textbf{Goal.} Over rounds, online tuning + human-approved tactics raise
+	problems-per-token \textbf{without} raising the false-accept rate at the gate.
+
+	\vspace{0.4em}
+	\begin{itemize}\small
+		\item \textbf{Rounds:} update $f_\theta$ online; an orchestrator proposes
+		      tactics, \textbf{sandbox-tested} before deployment; a \textbf{human
+		      gate} is the sole sign-off.
+		\item \textbf{A/B:} validated-tactic adoption vs a frozen control policy,
+		      on a frozen audited eval set.
+	\end{itemize}
+
+	\vspace{0.3em}
+	\begin{block}{Load-bearing metric}
+		\footnotesize
+		Wrongly-accepted-proof rate at the gate over rounds ---
+		\textbf{pre-registered threshold}; the claim is that it \emph{does not rise}.
+	\end{block}
+\end{frame}
+
+% ------------------------------------------------------------
+\begin{frame}{Phase 4 --- geometry \& topology \emph{(parallel)}}
+	Runs alongside once Phase 0 labels exist --- analysis, not a gate.
+
+	\vspace{0.5em}
+	\begin{itemize}\small
+		\item \textbf{Intrinsic dimension} of the activation manifold via
+		      \textbf{TwoNN} + the layer-wise ID profile (Ansuini).
+		      \emph{Does a low-ID manifold encode difficulty, and does its peak
+		      coincide with the most H1-predictive layer?}
+		\item \textbf{Informativeness by layer} --- $\hat{I}(g_\ell; B^*)$ across
+		      $\ell$, reused to locate the most informative layer.
+		\item \textbf{Exploratory topology} --- persistent-homology / barcode
+		      descriptors of activation clouds stratified by difficulty.
+	\end{itemize}
+\end{frame}
+
+% ============================================================
+\section{Related work}
+\sectionslide{What we're standing on}
+% ============================================================
+
+\begin{frame}{What we're standing on}
+	Thirteen sources, mapped to components --- each supports a specific
+	hypothesis, none is decoration.
+
+	\vspace{0.4em}
+	\begin{center}
+		\scriptsize
+		\renewcommand{\arraystretch}{1.2}
+		\begin{tabular}{p{2.7cm} p{4.1cm} c p{3.4cm}}
+			\toprule
+			\textbf{Cluster} & \textbf{Sources} & \textbf{Backs} & \textbf{Role} \\
+			\midrule
+			Representation geometry & Ansuini '19 · Facco/TwoNN '17 & \textbf{H1} & ID as difficulty signal \\
+			Compute scaling + bench & Snell '24 · Wang '22 · Hendrycks/MATH '21 & \textbf{H2} & Allocation $\max\sum_i p_i(B_i)$ + baselines \\
+			propose $\to$ verify $\to$ repair & Lightman '24 · Madaan '23 · Zelikman/STaR '22 & \textbf{H3} & Verifiers · corrector · self-improvement \\
+			Reasoning + tools & Wei/CoT · Yao/ToT · ReAct · Toolformer & --- & Prover generation \& tool use \\
+			Backbone & Zeng/GLM-4.5 '25 & --- & Open-weight prover \\
+			\bottomrule
+		\end{tabular}
+	\end{center}
+
+	\vspace{0.3em}
+	\footnotesize The allocation objective
+	$\max\sum_i p_i(B_i)$ s.t. $\sum_i B_i \le B_\text{tot}$ is
+	\textbf{Snell's adaptive-compute problem}, restated for proofs.
+\end{frame}
+
+% ------------------------------------------------------------
+\begin{frame}{What the literature \emph{doesn't} cover}
+	Methods --- not a finished answer. Four honest gaps our design must
+	\textbf{confront}, not inherit a solution to:
+
+	\vspace{0.4em}
+	\begin{itemize}\footnotesize
+		\item \textbf{MI in high dimension.} TwoNN gives ID, \emph{not}
+		      $\hat{I}(g_\ell; B^*)$ $\to$ hence our \textbf{label-shuffle control}.
+		\item \textbf{Generator-vs-verifier dynamics.} STaR, Self-Refine, Lightman's
+		      PRM assume a \emph{benign} generator; none covers \textbf{verifier
+		      gaming} --- the core H3 risk.
+		\item \textbf{Formal-assistant integration} (Lean/Coq) is only \emph{implied};
+		      no cited work wires an LLM prover to a proof assistant.
+		\item \textbf{Calibration of $p(B)$} under sampling noise / multiple
+		      testing --- untreated anywhere.
+	\end{itemize}
+\end{frame}
+
+% ============================================================
+\section{Results}
+\sectionslide{Current results}
+% ============================================================
+
+\begin{frame}{Current results}
+	First real \texttt{activations\_only} run:
+	\textbf{100 MATH problems, Qwen2.5-1.5B, all layers.}
+
+	\vspace{0.5em}
+	\textbf{Geometry (Phase 4, early) --- a signal is already there:}
+	\begin{itemize}
+		\item \textbf{Layer 14 (middle):} local density vs. difficulty ---
+		      \good{Spearman $\rho = -0.298$, $p = 0.003$} \checkmark
+		\item \textbf{Layer 28 (last):} $\rho = -0.113$, $p = 0.262$ --- not significant
+	\end{itemize}
+
+	\vspace{0.5em}
+	\begin{exampleblock}{}
+		\footnotesize
+		Harder problems cluster into a \textbf{denser manifold
+		mid-forward-pass}, before the signal is transformed away at the output
+		$\to$ \textbf{the probe should tap middle layers.}
+	\end{exampleblock}
+\end{frame}
+
+% ============================================================
+\section{Roadmap \& decisions}
+\sectionslide{Roadmap \& decisions}
+% ============================================================
+
+\begin{frame}{Roadmap --- what happens when}
+	The Plan sorted phases by cost; here they are on the calendar, each milestone
+	released by the previous gate.
+
+	\vspace{0.4em}
+	\begin{center}
+		\scriptsize
+		\renewcommand{\arraystretch}{1.3}
+		\begin{tabular}{p{3.2cm} p{6.2cm} c}
+			\toprule
+			\textbf{When} & \textbf{Milestone} & \textbf{Gate} \\
+			\midrule
+			Now $\to$ program start & scale activations to full pool; confirm layer-14 density signal beyond $n=100$ & --- \\
+			Weeks 1--2 & Phase 0 labels $\to$ Phase 1 H1 table + MI-vs-shuffle & \textbf{H1} \\
+			If H1 clears & Phase 2 allocation, budget-guided vs uniform end-to-end & \textbf{H2} \\
+			Then & Phase 3 online rounds (human gate) · Phase 4 geometry on reused activations & H3 \\
+			\bottomrule
+		\end{tabular}
+	\end{center}
+
+	\vspace{0.3em}
+	\footnotesize Compute ramp: cheap probe study first, GLM-4.5 + full pipeline
+	only once each gate clears.
+\end{frame}
+
+% ------------------------------------------------------------
+\begin{frame}[plain,noframenumbering]
+	\finalslide{\ContactURL}{\FeedbackURL}
+\end{frame}
+
+\end{document}

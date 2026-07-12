@@ -1,0 +1,483 @@
+% ============================================================
+%  hse.sty  —  HSE University Beamer Theme
+%  Engine  : pdfLaTeX
+%  Usage   : \usepackage{hse}  (after language packages)
+% ============================================================
+\ProvidesPackage{hse}[2026/04/16 HSE University Beamer Theme]
+
+% ── Dependencies ─────────────────────────────────────────────
+\RequirePackage{tikz}
+\RequirePackage{etoolbox}
+\RequirePackage{xcolor}
+\RequirePackage{tcolorbox}
+\RequirePackage{hyperref}
+\RequirePackage{lastpage}
+\RequirePackage{graphicx}
+\RequirePackage{xstring}
+
+\usetikzlibrary{calc}
+\tcbuselibrary{skins}
+
+% ── Localisation macros (override after \usepackage{hse}) ────
+% These defaults are ASCII so the .sty itself stays encoding-neutral.
+\providecommand{\LogoPlaceholderText}{HSE\,/\,LOGO}
+\providecommand{\ThankYouText}{Thank you!}
+\providecommand{\ContactsText}{Contact}
+\providecommand{\FeedbackText}{Feedback}
+
+% ============================================================
+%  HSE BRAND COLOURS  (hse.ru/en/info/brandbook)
+% ============================================================
+\definecolor{HSEBlue}      {HTML}{002F6C}  % primary deep navy
+\definecolor{HSEBlueDark}  {HTML}{001F4A}  % darker navy for frame title bar
+\definecolor{HSELightPink}    {HTML}{D7C3F1}  % calmer amber accent
+\definecolor{HSELightBlue} {HTML}{3A76B8}  % secondary mid-blue
+\definecolor{HSECyan}      {HTML}{009CDE}  % bright cyan accent
+\definecolor{HSEGray}      {HTML}{5A6472}  % neutral text gray
+\definecolor{HSELightGray} {HTML}{EAF0F6}  % near-white background
+\definecolor{HSERed}       {HTML}{C0392B}  % emphasis / alert red
+\definecolor{HSEGreen}     {HTML}{1A7A4A}  % example / positive
+\definecolor{HSEBlueTint}  {HTML}{D6E4F0}  % light blue tint
+\definecolor{HSEYellowTint}{HTML}{FFFBE0}  % light yellow tint
+
+% ============================================================
+%  BEAMER MODE
+% ============================================================
+\mode<presentation>
+
+\useoutertheme[subsection=false]{miniframes}
+
+\useinnertheme{circles}
+
+% Suppress all default headers/footers; we redraw via templates
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{headline}{}
+\setbeamertemplate{footline}{}
+
+% ── Colour assignments ───────────────────────────────────────
+\setbeamercolor{normal text}           {fg=black,        bg=white}
+\setbeamercolor{alerted text}          {fg=HSERed}
+\setbeamercolor{example text}          {fg=HSEGreen}
+\setbeamercolor{structure}             {fg=HSEBlue}
+
+\setbeamercolor{palette primary}       {fg=white,        bg=HSEBlueDark}
+\setbeamercolor{palette secondary}     {fg=white,        bg=HSELightBlue}
+\setbeamercolor{palette tertiary}      {fg=white,        bg=HSECyan}
+\setbeamercolor{palette quaternary}    {fg=HSEBlue,      bg=HSELightPink}
+
+\setbeamercolor{section in head/foot}  {fg=white,        bg=HSEBlueDark}
+\setbeamercolor{frametitle}            {fg=white,        bg=HSEBlue}
+\setbeamercolor{framesubtitle}         {fg=HSELightPink,    bg=HSEBlue}
+
+\setbeamercolor{block title}           {fg=white,        bg=HSELightBlue}
+\setbeamercolor{block body}            {fg=black,        bg=HSEBlueTint}
+\setbeamercolor{block title alerted}   {fg=white,        bg=HSERed}
+\setbeamercolor{block body alerted}    {fg=black,        bg=HSERed!8}
+\setbeamercolor{block title example}   {fg=white,        bg=HSEGreen}
+\setbeamercolor{block body example}    {fg=black,        bg=HSEGreen!8}
+
+\setbeamercolor{item}                  {fg=HSEBlue}
+\setbeamercolor{subitem}               {fg=HSELightBlue}
+\setbeamercolor{subsubitem}            {fg=HSECyan}
+
+\setbeamercolor{section in toc}        {fg=HSEBlue}
+\setbeamercolor{subsection in toc}     {fg=HSELightBlue}
+
+% ── Fonts ────────────────────────────────────────────────────
+\setbeamerfont{title}          {size=\Large,      series=\bfseries}
+\setbeamerfont{subtitle}       {size=\normalsize, series=\mdseries}
+\setbeamerfont{author}         {size=\small}
+\setbeamerfont{institute}      {size=\small}
+\setbeamerfont{date}           {size=\footnotesize}
+\setbeamerfont{frametitle}     {size=\large,      series=\bfseries}
+\setbeamerfont{framesubtitle}  {size=\small}
+\setbeamerfont{section in toc} {series=\bfseries}
+
+% ============================================================
+%  HEADLINE  (THU-style horizontal section bubbles)
+% ============================================================
+\defbeamertemplate*{headline}{hse theme}{%
+	\leavevmode%
+	\begin{beamercolorbox}[wd=\paperwidth,leftskip=0.4em,rightskip=0.4em]{section in head/foot}%
+		\insertnavigation{\paperwidth}%
+	\end{beamercolorbox}%
+}
+
+% ============================================================
+%  FRAME TITLE
+% ============================================================
+\defbeamertemplate*{frametitle}{hse theme}{%
+	\nointerlineskip%
+	\begin{beamercolorbox}[wd=\paperwidth,ht=2.9ex,dp=1.3ex,%
+			leftskip=0.8em,rightskip=0.8em]{frametitle}%
+		\usebeamerfont{frametitle}\insertframetitle%
+		\ifx\insertframesubtitle\@empty\else
+			\hfill
+			{\usebeamerfont{framesubtitle}%
+				\usebeamercolor[fg]{framesubtitle}%
+				\insertframesubtitle}%
+		\fi
+	\end{beamercolorbox}%
+}
+
+% ============================================================
+%  FOOTLINE
+%  Left : \FooterLeft   (defined in main.tex)
+%  Right: page / total  (real PDF page numbers via lastpage)
+% ============================================================
+\providecommand{\FooterLeft}{}   % fallback if user forgets
+
+\defbeamertemplate*{footline}{hse theme}{%
+	\begin{beamercolorbox}[wd=\paperwidth,ht=2.4ex,dp=1.2ex,%
+			leftskip=0.8em,rightskip=0.8em]{palette primary}%
+		\usebeamerfont{author in head/foot}%
+		\FooterLeft%
+		\hfill%
+		\insertpagenumber\,/\,\pageref{LastPage}%
+		\hspace{0.3em}%
+	\end{beamercolorbox}%
+}
+
+% ============================================================
+%  TITLE PAGE
+% ============================================================
+\defbeamertemplate*{title page}{hse theme}{%
+	\begin{tikzpicture}[remember picture,overlay]
+		%% ── Solid navy background ──────────────────────────────
+		\fill[HSEBlue]
+		(current page.south west) rectangle (current page.north east);
+
+		%% ── Left yellow accent stripe ──────────────────────────
+		\fill[HSELightPink]
+		(current page.south west)
+		rectangle ([xshift=7pt]current page.north west);
+
+		%% ── Diagonal translucent accent (HSE cyan) ─────────────
+		\fill[HSECyan,opacity=0.18]
+		([xshift=7pt]current page.south west)
+			-- ([xshift=120pt]current page.south west)
+			-- ([xshift=7pt]current page.north west)
+		-- cycle;
+
+		%% ── Bottom yellow band ─────────────────────────────────
+		\fill[HSELightPink]
+		(current page.south west)
+		rectangle ([yshift=7pt]current page.south east);
+
+		%% ── Decorative dot grid (right side) ───────────────────
+		\foreach \xi in {0.56,0.63,...,0.97}{
+				\foreach \yi in {0.08,0.16,...,0.55}{
+						\fill[white,opacity=0.055]
+						($(current page.south west)!\xi!(current page.south east)!%
+							\yi!(current page.north east)$)
+						circle (1.4pt);
+					}
+			}
+
+		%% ── Logo placeholder (top-right) ──────────────────────
+		%  Replace \logobox with \includegraphics[height=1.2cm]{hse-logo}
+		\node[anchor=north east, inner sep=0pt]
+		at ([xshift=-18pt,yshift=-14pt]current page.north east){%
+			\includegraphics[height=1.2cm]{static/images/spb_white.png}%
+		};
+
+		%% ── Event + location line ──────────────────────────────
+		\node[anchor=north west,
+			text=HSELightPink, font=\footnotesize\itshape, inner sep=0pt]
+		at ([xshift=20pt,yshift=-14pt]current page.north west){%
+			\EventName\quad\textbullet\quad\EventLocation%
+		};
+
+		%% ── Main title ─────────────────────────────────────────
+		\node[anchor=west,
+			text=white, font=\Large\bfseries,
+			text width=0.70\paperwidth, inner sep=0pt]
+		at ([xshift=20pt,yshift=14pt]current page.west){%
+			\PresentationTitle%
+		};
+
+		%% ── Subtitle ───────────────────────────────────────────
+		\node[anchor=west,
+			text=HSELightPink, font=\normalsize,
+			text width=0.68\paperwidth, inner sep=0pt]
+		at ([xshift=20pt,yshift=-8pt]current page.west){%
+			\PresentationSubtitle%
+		};
+
+		%% ── Horizontal divider ─────────────────────────────────
+		\draw[HSELightPink,line width=0.75pt]
+		([xshift=20pt,yshift=-24pt]current page.west)
+		-- ++(0.68\paperwidth,0);
+
+		%% ── Author name ────────────────────────────────────────
+		\node[anchor=north west,
+			text=white, font=\small\bfseries, inner sep=0pt]
+		at ([xshift=20pt,yshift=-31pt]current page.west){%
+			\AuthorName%
+		};
+
+		%% ── Role / affiliation ─────────────────────────────────
+		\node[anchor=north west,
+			text=white!72!HSEBlue, font=\footnotesize, inner sep=0pt]
+		at ([xshift=20pt,yshift=-43pt]current page.west){%
+			\AuthorRole%
+		};
+		\node[anchor=north west,
+			text=white!72!HSEBlue, font=\footnotesize, inner sep=0pt]
+		at ([xshift=20pt,yshift=-54pt]current page.west){%
+			\AuthorAffiliation%
+		};
+
+		%% ── Date (bottom-right) ────────────────────────────────
+		\node[anchor=south east,
+			text=white!60!HSEBlue, font=\footnotesize, inner sep=0pt]
+		at ([xshift=-18pt,yshift=12pt]current page.south east){%
+			\PresentationDate%
+		};
+	\end{tikzpicture}%
+}
+
+%% Logo box helper — swap out for real logo in main.tex
+\newcommand{\logobox}{%
+	\begin{tikzpicture}
+		\node[draw=HSELightPink, line width=1pt,
+			minimum width=2.4cm, minimum height=1.3cm,
+			text=HSELightPink, font=\tiny\bfseries,
+			rounded corners=3pt, align=center, inner sep=5pt]{%
+			\LogoPlaceholderText};
+	\end{tikzpicture}%
+}
+
+% ============================================================
+%  TABLE OF CONTENTS
+% ============================================================
+\setbeamertemplate{section in toc}{%
+	\leavevmode\vspace{2pt}%
+	\hspace*{0.4em}%
+	\begin{tikzpicture}[baseline=-0.45ex]
+		\node[circle, fill=HSEBlue, text=white,
+			font=\tiny\bfseries, inner sep=2.5pt]{%
+			\inserttocsectionnumber};
+	\end{tikzpicture}%
+	\hspace*{0.5em}\inserttocsection\par%
+}
+
+% ============================================================
+%  EMPHASIS COMMANDS
+% ============================================================
+
+%% \emred{text}  — red-boxed inline emphasis (text)
+\newtcbox{\emred}{%
+	on line,
+	arc=2pt,
+	boxrule=0.75pt,
+	colframe=HSERed,
+	colback=HSERed!7,
+	left=1.5pt, right=1.5pt, top=0.75pt, bottom=0.75pt,
+	boxsep=0pt
+}
+
+\newcommand{\hlred}[1]{%
+	\emred{$\displaystyle#1$}%
+}
+
+%% emphblock environment — standalone red-border callout
+%  Usage: \begin{emphblock}{Title} ... \end{emphblock}
+\newtcolorbox{emphblock}[1]{%
+	enhanced,
+	title={#1},
+	arc=3pt,
+	boxrule=1.2pt,
+	colframe=HSERed,
+	colback=HSERed!5,
+	coltitle=white,
+	colbacktitle=HSERed,
+	fonttitle=\bfseries\small,
+	left=6pt, right=6pt, top=4pt, bottom=4pt,
+	attach boxed title to top left={yshift=-2mm, xshift=5mm},
+	boxed title style={arc=2pt, boxrule=0pt, colback=HSERed}
+}
+
+% ============================================================
+%  SLIDE LAYOUT COMMANDS
+% ============================================================
+
+%% Section divider slide
+%  \sectionslide{Section Title}
+\newcommand{\sectionslide}[1]{%
+	\begin{frame}[plain,noframenumbering]
+		\begin{tikzpicture}[remember picture,overlay]
+			\fill[HSEBlue]
+			(current page.south west) rectangle (current page.north east);
+			\fill[HSELightPink]
+			(current page.south west)
+			rectangle ([xshift=6pt]current page.north west);
+			\fill[HSELightPink]
+			(current page.south west)
+			rectangle ([yshift=6pt]current page.south east);
+			\node[anchor=north east, inner sep=0pt]
+			at ([xshift=-18pt,yshift=-14pt]current page.north east){%
+				\includegraphics[height=1.2cm]{static/images/spb_white.png}%
+			};
+			\node[text=white, font=\Huge\bfseries,
+				text width=0.74\paperwidth, align=center]
+			at (current page.center){#1};
+		\end{tikzpicture}
+	\end{frame}%
+}
+
+%% One centered image with caption
+%  \oneimage{file}{caption}{width}
+\newcommand{\oneimage}[3]{%
+	\begin{center}
+		\includegraphics[width=#3]{#1}\\[5pt]
+		{\small\color{HSEGray}#2}
+	\end{center}%
+}
+
+%% Two images side by side
+%  \twoimages{left file}{left caption}{right file}{right caption}
+\newcommand{\twoimages}[4]{%
+	\begin{columns}[c]
+		\column{0.48\textwidth}
+		\centering
+		\includegraphics[width=\linewidth,height=0.56\textheight,
+			keepaspectratio]{#1}\\[3pt]
+		{\small\color{HSEGray}#2}
+		\column{0.48\textwidth}
+		\centering
+		\includegraphics[width=\linewidth,height=0.56\textheight,
+			keepaspectratio]{#3}\\[3pt]
+		{\small\color{HSEGray}#4}
+	\end{columns}%
+}
+
+%% 2×2 image grid
+%  \fourgrid{img1}{cap1}{img2}{cap2}{img3}{cap3}{img4}{cap4}
+\newcommand{\fourgrid}[8]{%
+	\begin{columns}[t]
+		\column{0.48\textwidth}
+		\centering
+		\includegraphics[width=\linewidth,height=0.37\textheight,
+			keepaspectratio]{#1}\\[1pt]
+		{\tiny\color{HSEGray}#2}\\[5pt]
+		\includegraphics[width=\linewidth,height=0.37\textheight,
+			keepaspectratio]{#5}\\[1pt]
+		{\tiny\color{HSEGray}#6}
+		\column{0.48\textwidth}
+		\centering
+		\includegraphics[width=\linewidth,height=0.37\textheight,
+			keepaspectratio]{#3}\\[1pt]
+		{\tiny\color{HSEGray}#4}\\[5pt]
+		\includegraphics[width=\linewidth,height=0.37\textheight,
+			keepaspectratio]{#7}\\[1pt]
+		{\tiny\color{HSEGray}#8}
+	\end{columns}%
+}
+
+%% Image + text (picture left, bullets right)
+%  \imagewithtext{file}{right-column content}
+\newcommand{\imagewithtext}[2]{%
+	\begin{columns}[c]
+		%   \column{0.44\textwidth}
+		%   \includegraphics[width=\linewidth,
+		%     keepaspectratio]{#1}
+		%   \column{0.52\textwidth}
+		%   #2
+
+		\begin{column}{0.56\textwidth}
+			#2
+		\end{column}
+
+		\begin{column}{0.44\textwidth}
+			\includegraphics[width=\textwidth,height=0.8\textheight,keepaspectratio]{#1}
+		\end{column}
+	\end{columns}%
+}
+
+%% Two-column generic frame
+%  \twocols{left content}{right content}
+\newcommand{\twocols}[2]{%
+	\begin{columns}[T]
+		\column{0.48\textwidth}#1
+		\column{0.48\textwidth}#2
+	\end{columns}%
+}
+
+% ============================================================
+%  FINAL SLIDE
+%  \finalslide{contactURL}{feedbackURL}
+% ============================================================
+%  \cropurl{url} — typeset url as a link, but if the displayed
+%  text is longer than \UrlCropLen characters, truncate it with
+%  an ellipsis (the link still points to the full url).
+\newcommand{\UrlCropLen}{38}
+\newcommand{\cropurl}[1]{%
+	\href{#1}{\texttt{%
+		\StrLen{#1}[\hse@urllen]%
+		\ifnumcomp{\hse@urllen}{>}{\UrlCropLen}%
+			{\StrLeft{#1}{\UrlCropLen}\dots}%
+			{#1}%
+	}}%
+}
+\newcommand{\finalslide}[2]{%
+	\begin{tikzpicture}[remember picture,overlay]
+		%% Background
+		\fill[HSEBlue]
+		(current page.south west) rectangle (current page.north east);
+		\fill[HSELightPink]
+		(current page.south west)
+		rectangle ([xshift=7pt]current page.north west);
+		\fill[HSELightPink]
+		(current page.south west)
+		rectangle ([yshift=7pt]current page.south east);
+
+		%% "Thank you" heading
+		\node[text=white, font=\fontsize{30}{34}\selectfont\bfseries,
+			anchor=center]
+		at ([yshift=26pt]current page.center){\ThankYouText};
+
+		%% Divider
+		\draw[HSELightPink,line width=0.8pt]
+		([yshift=7pt]current page.center)
+		+(-0.40\paperwidth,0) -- +(0.40\paperwidth,0);
+
+		%% Author line
+		\node[text=white!75!HSEBlue, font=\small, anchor=north, inner sep=0pt]
+		at ([yshift=4pt]current page.center){%
+			\AuthorName\quad\textbullet\quad\AuthorAffiliation};
+
+		%% Left QR — contact
+		\node[text=white, font=\footnotesize\bfseries,
+			anchor=north, inner sep=0pt]
+		at ([xshift=-0.22\paperwidth,yshift=-13pt]current page.center)
+		{\ContactsText};
+
+		\node[fill=white, inner sep=5pt, rounded corners=3pt,
+			anchor=north]
+		at ([xshift=-0.22\paperwidth,yshift=-28pt]current page.center){%
+			\qrcode[height=1.7cm]{#1}};
+
+		\node[text=HSELightPink, font=\tiny, anchor=north, inner sep=0pt]
+		at ([xshift=-0.22\paperwidth,yshift=-116pt]current page.center){%
+			\cropurl{#1}};
+
+		%% Right QR — feedback
+		\node[text=white, font=\footnotesize\bfseries,
+			anchor=north, inner sep=0pt]
+		at ([xshift=0.22\paperwidth,yshift=-13pt]current page.center)
+		{\FeedbackText};
+
+		\node[fill=white, inner sep=5pt, rounded corners=3pt,
+			anchor=north]
+		at ([xshift=0.22\paperwidth,yshift=-28pt]current page.center){%
+			\qrcode[height=1.7cm]{#2}};
+
+		\node[text=HSELightPink, font=\tiny, anchor=north, inner sep=0pt]
+		at ([xshift=0.22\paperwidth,yshift=-116pt]current page.center){%
+			\cropurl{#2}};
+	\end{tikzpicture}%
+}
+
+\mode<all>
+\endinput
