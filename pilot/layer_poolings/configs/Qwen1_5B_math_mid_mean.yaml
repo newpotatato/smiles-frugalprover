@@ -34,12 +34,19 @@ prompt_template: "{problem}"
 # Which hidden states to keep + how to pool over the token axis.
 # layer indexes output_hidden_states: 0 = embeddings, 1..N = block outputs, -1 = last.
 # Chosen for a 28-layer model by depth fraction (~50% / ~75% / final):
-#   - mid layer,  mean  -> abstract/semantic content
+#   - mid layer,  mean  -> abstract/semantic content (cloud center)
+#   - mid layer,  std   -> per-dim spread of the token cloud at the same depth.
+#                          Companion to mean: how varied the reasoning content is
+#                          across tokens tends to track how "hard" the model finds
+#                          the problem. Kept at the mid (semantic) layer only to
+#                          limit added dimensionality vs. the 200-problem sample,
+#                          and because late layers get anisotropic (see geometry).
 #   - late layer, mean  -> higher-level task representation
 #   - final,      last  -> richest single summary vector for a causal LM
-# pooling: one of [mean, max, last, first, sum]
+# pooling: one of [mean, std, max, last, sum]
 features:
-  - {layer: 14, pooling: mean}   # ~50% depth
+  - {layer: 14, pooling: mean}   # ~50% depth, cloud center
+  - {layer: 14, pooling: std}    # ~50% depth, cloud spread (pairs with L14_mean)
   - {layer: 21, pooling: mean}   # ~75% depth
   - {layer: -1, pooling: last}   # final layer, last non-pad token
 
