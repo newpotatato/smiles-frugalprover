@@ -1,104 +1,274 @@
-# FrugalProver — pilot
+# FrugalProver
 
-Research pilot around [FrugalProver](docs/proposal.pdf) (Serguei Barannikov,
-Skoltech): a compact multi-agent theorem-proving system that budgets its own
-compute per problem, predicting effort from a small model's internal
-activations before attempting a solution.
+A compact multi-agent theorem-proving system that **budgets its own compute per
+problem** — predicting how much effort a problem needs from a small model's
+internal activations, *before* attempting to solve it, and spending accordingly.
 
-This repo is the literature review + a runnable pilot testing the system's core
-premise (H1: "effort is predictable in advance from activations") on a small
-scale, ahead of the full project.
+Based on the [FrugalProver proposal](docs/proposal.pdf) by Serguei Barannikov
+(Skoltech). This repository is the implementation.
 
-## Where to start
+## The idea
 
-- **[docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md)** — what we're actually
-  testing, organized as go/no-go phases (H1 → H2 → H3 + geometry): what each
-  phase tests, how, and what counts as a useful result. Read this first.
-- **[references/PIPELINE.md](references/PIPELINE.md)** — full breakdown of the
-  proposed system (budget oracle, prover, verifiers, corrector, human gate,
-  orchestrator), risks, and open gaps.
-- **[references/MANIFEST.md](references/MANIFEST.md)** — how each of the 13
-  cited papers maps to the system's components and hypotheses.
-
-## Repo layout
-
-The repo is organized so the three research directions can be developed
-independently: each owns one folder under `experiments/`, and they share one
-library (`frugalprover`), one data pool (`data/`), and one extraction step
-(`extraction/`).
+Given a fixed total compute budget `B_tot` across a set of problems, spend it
+where it buys the most:
 
 ```
-docs/                 the proposal (proposal.pdf) + RESEARCH_PLAN
-references/            13 cited papers (PDF) + literature synthesis
-src/frugalprover/      shared library (pip-installed, see Setup)
-  paths.py              repo-anchored DATA_DIR / RESULTS_DIR
-  id_estimators.py      TwoNN + MLE intrinsic-dimension estimators
-data/                  MATH problem pools + subsets (+ gitignored raw dumps)
-pipeline/             data prep / split / merge / CPU smoke test (shared infra)
-extraction/           Colab GPU notebooks that produce the activations
-  configs/              layer-pooling YAML configs
-experiments/          one folder per research direction (see RESEARCH_PLAN phases)
-  A_oracle/             oracle architectures + calibration/learning-curve (Phase 1)
-  B_layers/             layer-depth empirics (Phase 1)
-  C_geometry/           ID / geometry vs. difficulty (Phase 4)
-results/              generated plots / tables / oracle_model.joblib (gitignored dumps)
-slides/               LaTeX deck (build output under slides/out/ is gitignored)
+maximize  Σ pᵢ(Bᵢ)     subject to  Σ Bᵢ ≤ B_tot
 ```
 
-## Setup
+where `pᵢ(B)` is the probability of solving problem `i` within budget `B`.
+Uniform allocation wastes tokens on problems that were easy and starves the ones
+that were nearly solved. Doing better requires knowing something about a problem
+*before* solving it — which is the bet the whole system rests on.
 
-Local steps are CPU-only (no GPU). Install the shared library once, in editable
-mode, so every script and notebook can `import frugalprover` regardless of the
-folder it runs from:
+## System
 
 ```
-pip install -r requirements.txt
-pip install -e .
+         ┌──────────────┐
+   x ───►│ Budget Oracle│──── B̂(x) ────┐
+         └──────────────┘               │
+                                        ▼
+                                  ┌──────────┐
+                                  │  Prover  │
+                                  └────┬─────┘
+                                       │ candidate proof
+                                       ▼
+                              ┌──────────────────┐
+                              │ Verifiers (k≥3)  │
+                              └────┬────────┬────┘
+                                   │ pass   │ fail
+                                   ▼        ▼
+                            ┌───────────┐  ┌───────────┐
+                            │Human Gate │  │ Corrector │──┐
+                            └───────────┘  └───────────┘  │
+                                                 ▲        │
+                                                 └────────┘
+                              ┌──────────────┐
+                              │ Orchestrator │  (offline: online oracle
+                              └──────────────┘   updates + tactic proposals)
 ```
 
-The extraction notebooks (`extraction/*.ipynb`) run on a Colab GPU runtime and
-install their own GPU stack in their first cell.
+| Component | Status | Where |
+|---|---|---|
+| **Budget Oracle** — predicts `B̂(x)` from activations | **built** | `oracle/` |
+| **Prover** — solves under a budget | protocol only | `agent/` |
+| **Verifiers** — ensemble check, k≥3 | not started | — |
+| **Corrector** — repair loop on failure | not started | — |
+| **Human Gate** — sole sign-off on accepted proofs | not started | — |
+| **Orchestrator** — online updates, tactic proposals | not started | — |
 
-## Running the pilot
+Full component breakdown, including risks and open gaps:
+[references/PIPELINE.md](references/PIPELINE.md).
 
-1. **`python pipeline/data_prep.py`** — pulls MATH from Hugging Face, builds a
-   large balanced pool (`data/math_pool_large.json`, ~300 problems) plus a
-   smaller subset nested inside it (`data/math_labeling_subset.json`, ~80
-   problems) for the expensive full budget-sweep labeling.
-2. **`python pipeline/split_subset.py <file> <N>`** — splits either file (by
-   name, resolved in `data/`) into N parts (stratified by level/type) for
-   parallel runs.
-3. **`extraction/colab_budget_oracle_pilot.ipynb`** (upload to Colab) — set
-   `RUN_MODE` to one of three tiers before running:
-   - `activations_only` — cheap, forward-pass-only, scales to hundreds of problems.
-   - `full_sweep` — expensive, the real budget/B* labels, run only on the labeling subset.
-   - `baseline_single` — cheap-ish middle ground, one budget level at larger scale.
-4. **`python pipeline/merge_results.py`** — joins all downloaded tier outputs
-   (placed in `data/`) by problem id into one `data/pilot_results.jsonl`.
-5. Analysis, pick what you need (each takes the merged jsonl; plots/artifacts
-   are written to the current directory):
-   - `python experiments/B_layers/analyze.py data/pilot_results.jsonl` — layer-depth sweep, baseline comparison, bootstrap/permutation checks.
-   - `python experiments/A_oracle/oracle.py data/pilot_results.jsonl --mode classification --compare-models --demo` — fit and compare oracle model architectures.
-   - `python experiments/C_geometry/id_vs_difficulty.py data/pilot_results.jsonl` — ID/compression-method vs. difficulty hypothesis.
-   - `python experiments/A_oracle/calibration_cost.py data/pilot_results.jsonl` — measured cost of labeling vs. an oracle-guided projection.
-   - `python experiments/A_oracle/learning_curve.py data/pilot_results.jsonl` — does the oracle improve as labeled data accrues.
+## Roadmap
 
-`pipeline/smoke_test.py` is a CPU-only, tiny-model sanity check for the harness
-logic (grading, activation shapes) -- run it before burning Colab time on
-changes to the notebook.
+The project is staged so each phase is a go/no-go for the next — details and
+gates in [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md).
 
-There's also a separate feature-extraction track for layer-pooled hidden states
-(parquet output), documented in
-[extraction/README_layer_poolings.md](extraction/README_layer_poolings.md).
+| Phase | Claim | Status |
+|---|---|---|
+| **0** | Harness + ground-truth `B*` labels | infrastructure built; **budget labeling not implemented** |
+| **1** | **H1**: solve effort is predictable from activations | pipeline built, awaiting real labels |
+| **2** | **H2**: budget-aware allocation beats uniform at matched compute | not started |
+| **3** | **H3**: self-improvement without raising the false-accept rate | not started |
+| **4** | Geometry of the difficulty representation | analyses built, pilot results in `docs/geometry_pilot/` |
+
+Phase 1 is the linchpin. If effort isn't predictable from a cheap model's
+activations, allocation has nothing to allocate on and Phases 2–3 don't follow.
+
+> **The one blocking gap:** Phase 0's budget labeling (Stage 2 below) isn't
+> implemented. Its interface, record schema and resumable runner all exist —
+> what's missing is the generation loop. See
+> [docs/ARTIFACTS.md](docs/ARTIFACTS.md#implementing-stage-2).
+
+## What runs today: the Budget Oracle pipeline
+
+Five stages, each independently runnable and swappable, talking only through
+documented files:
+
+```
+sample ──> problems.jsonl ──┬──> budget  ──> budgets.jsonl ──┐
+                            │                                ├──> train ──> oracle
+                            └──> extract ──> hidden_states ──┘        │
+                                                                      └──> report
+```
+
+The file contracts are in **[docs/ARTIFACTS.md](docs/ARTIFACTS.md)** — read that
+before replacing a stage or bringing in data produced elsewhere.
+
+### Setup
+
+```bash
+pip install -e .            # CPU: sampling, oracle training, analysis, reporting
+pip install -e ".[gpu]"     # adds torch + transformers, needed for extraction
+```
+
+`frugalprover` lands on your PATH; `python -m frugalprover` works identically if
+it doesn't.
+
+### Quick start
+
+```bash
+frugalprover run-all --config configs/smoke.yaml
+frugalprover runs
+```
+
+No GPU, no model download: budget labels are mocked and hidden states are
+synthetic, with a planted signal in one layer so you can watch the layer sweep
+find it. Nothing it produces is a research result — it proves the plumbing
+works. The real config is `configs/pipeline.yaml`.
+
+### A real pilot
+
+```bash
+# 1. Balanced MATH sample, stratified by subject x level
+frugalprover sample --config configs/pipeline.yaml
+
+# 2. Budget labeling -- NOT IMPLEMENTED. Mock it for now:
+frugalprover budget --config configs/pipeline.yaml --set budget.estimator=mock
+
+# 3. Hidden states (needs a GPU -- see docs/extract_hidden_states_colab.ipynb)
+frugalprover extract --config configs/pipeline.yaml
+
+# 4. Fit the oracle, sweeping every layer
+frugalprover train --config configs/pipeline.yaml
+
+# 5. Metrics, predictions and plots into results/pilot/
+frugalprover report --config configs/pipeline.yaml
+```
+
+Override any key without editing the config:
+
+```bash
+frugalprover train -c configs/pipeline.yaml --set train.mode=regression
+```
+
+### The two oracle framings
+
+| | predicts | uses censored problems | single fixed budget |
+|---|---|---|---|
+| `classification` (default) | `P(solved \| features, budget)` | yes, as honest zeros | works |
+| `regression` | `B*` directly | no — drops them | refuses |
+
+Censored problems — never solved at any budget tried — are exactly the hard
+ones, which is why classification is the default. Regression is a cross-check
+when you have a real multi-budget sweep.
+
+### As a library
+
+```python
+from frugalprover import OracleDataset, ClassificationOracle
+
+ds = OracleDataset.load(
+    problems="data/pilot/problems.jsonl",
+    hidden_states="data/pilot/hidden_states.parquet",
+    budgets="data/pilot/budgets.jsonl",
+)
+oracle = ClassificationOracle().fit(ds)     # sweeps layers, keeps the best
+print(oracle.layer, oracle.cv_score, oracle.layer_scores)
+oracle.save("oracle.joblib")
+```
+
+`import frugalprover` doesn't pull in torch, transformers or datasets — the
+analysis path works on a laptop with no GPU stack.
+
+## Layout
+
+```
+src/frugalprover/
+  common/         config, artifact I/O, records, grading
+  agent/          Prover -- PROTOCOL ONLY, see its README
+  oracle/         the Budget Oracle, as five stages
+    sample/         Stage 1  problem sampling
+    budget/         Stage 2  budget labeling (unimplemented + mock)
+    states/         Stage 3  hidden-state extraction
+    model/          Stage 4  the oracle: feature blocks, both framings
+    reporting/      Stage 5  results collection, run comparison
+  analysis/       research analyses (layer probe, geometry, calibration,
+                  learning curve)
+configs/          pipeline.yaml (real), smoke.yaml (fast, CPU, fake labels)
+docs/             ARTIFACTS.md (contracts), RESEARCH_PLAN.md, proposal,
+                  Colab notebooks, geometry pilot results
+references/       13 cited papers + literature synthesis
+slides/           LaTeX deck
+```
+
+Later components get their own top-level package next to `agent/` and `oracle/`
+— `verify/`, `correct/`, `orchestrate/`. The dependency direction is one-way:
+`oracle/` never imports `agent/`, and nothing imports `orchestrate/`.
+
+## Extending it
+
+**A new pipeline stage implementation** — a different sampler, solver, or
+extractor — implements the Protocol in that stage's `base.py` and registers
+itself. Nothing downstream changes, because stages only share files.
+
+**A new system component** — verifiers, corrector — gets a package, a Protocol
+in `base.py`, and a documented artifact contract in `docs/ARTIFACTS.md` before
+any implementation. The contract is what makes a component replaceable.
+
+**Bringing data from elsewhere** — match the columns in
+[docs/ARTIFACTS.md](docs/ARTIFACTS.md). There's no version to satisfy and no
+registration step; sidecar `.meta.json` files are written for provenance but
+never read as a precondition.
+
+## Methodology notes
+
+Three conventions that affect how results should be read:
+
+**`level` is never a model feature.** MATH's human difficulty annotation is used
+for stratifying and plotting only. A problem in the wild carries no such label,
+so training on it would inflate every score and stop the experiment answering
+its own question.
+
+**The surface-feature baseline is the bar.** Longer problems plausibly need more
+tokens for reasons unrelated to reasoning difficulty. If activations don't beat
+`train.features=[surface,subject]`, there is no result. Run both, compare with
+`frugalprover runs`. There's a null baseline too — `--set
+extract.extractor=synthetic --set extract.synthetic_signal_strength=0` replaces
+activations with noise, and the oracle should score at chance.
+
+**The pipeline's `cv_score` is exploratory.** It's the maximum over ~29 layers,
+so it's optimistically biased — measure how much with the null baseline above,
+at your real n and layer count. For anything going on a slide, use
+`analysis/layer_probe.py`, which runs a confirmatory test at an a-priori layer
+and Bonferroni-corrects the exploratory one.
+[docs/ORACLE.md](docs/ORACLE.md#8-known-limitations) has the full list.
+
+## Analyses
+
+```bash
+python -m frugalprover.analysis.layer_probe \
+    --problems data/pilot/problems.jsonl \
+    --hidden-states data/pilot/hidden_states.parquet \
+    --budgets data/pilot/budgets.jsonl \
+    --out-dir results/analysis
+```
+
+Also `geometry` (intrinsic dimension vs difficulty — Phase 4), `calibration`
+(labeling cost vs oracle-guided cost), and `learning_curve` (does the oracle
+improve as labels accrue — Phase 3's online-update claim).
+
+## Reading order
+
+1. **[docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md)** — what's being tested, as
+   go/no-go phases, and what counts as a result. Start here.
+2. **[references/PIPELINE.md](references/PIPELINE.md)** — the full system:
+   every node, its technology, its risks.
+3. **[docs/ORACLE.md](docs/ORACLE.md)** — how the Budget Oracle is implemented:
+   features, both framings, layer selection, CV protocol, known limitations.
+4. **[docs/ARTIFACTS.md](docs/ARTIFACTS.md)** — the file contracts between
+   pipeline stages.
+5. **[references/MANIFEST.md](references/MANIFEST.md)** — how each cited paper
+   maps to a component.
 
 ## Data note
 
-`data/pilot_*.jsonl` (raw per-problem activation dumps and the merged
-`pilot_results.jsonl`) are **not** committed -- activations at every layer for
-hundreds of problems serialize to well over GitHub's 100MB file limit.
-Regenerate them by running the notebook, or ask whoever ran it to share the
-file directly (Drive/Slack) if you just want to run the analysis scripts
-without re-running Colab yourself.
+Hidden-state dumps aren't committed — pooled vectors at every layer for a few
+hundred problems run to tens of MB, and the raw equivalent exceeded GitHub's
+file limit. Regenerate with `frugalprover extract`, or get the parquet from
+whoever ran it. Runs are reproduced from the `config.yaml` in their results
+directory.
 
 ## Authors
 
@@ -111,4 +281,4 @@ Created during **SMILES 2026**.
 | Nika Smirnova | AIRI | [nika646470@gmail.com](mailto:nika646470@gmail.com) |
 | Alima Chekueva | — | — |
 
-Research pilot around the FrugalProver proposal by Serguei Barannikov (Skoltech).
+Based on the FrugalProver proposal by Serguei Barannikov (Skoltech).

@@ -1,0 +1,101 @@
+# The real pilot config. Every key shown with its default, so this file
+# doubles as the reference -- delete anything you don't want to override.
+#
+# Run the whole thing:      frugalprover run-all --config configs/pipeline.yaml
+# Run one stage:            frugalprover train  --config configs/pipeline.yaml
+# Override without editing: --set train.mode=regression
+
+run_name: pilot
+seed: 0
+
+# ---------------------------------------------------------------- Stage 1
+# Balanced sample from MATH. Balance matters: the test split is uneven across
+# subjects and levels, and an unbalanced draw lets the oracle learn "geometry
+# problems are long" instead of anything about solve effort.
+sample:
+  dataset_name: EleutherAI/hendrycks_math
+  subjects:
+    - algebra
+    - counting_and_probability
+    - geometry
+    - intermediate_algebra
+    - number_theory
+    - prealgebra
+    - precalculus
+  split: test
+  seed: 0
+  per_level_per_subject: 12      # over-sample per (subject, level), then cap
+  n_problems: 300
+  require_boxed_answer: true     # no gold answer -> can't grade -> useless here
+  output: problems.jsonl
+
+# ---------------------------------------------------------------- Stage 2
+# NOT IMPLEMENTED. `estimator: sweep` exits with a pointer to the spec.
+# Use `mock` to exercise Stages 3-5 with synthetic labels.
+#
+# This is the expensive stage: n_problems x len(budgets) x n_samples
+# generations. Point it at a smaller file than Stage 3 uses.
+budget:
+  estimator: sweep
+  agent: Qwen/Qwen2.5-1.5B-Instruct
+  budgets: [128, 256, 512]       # token caps; a single entry = one fixed pass
+  n_samples: 3                   # attempts per (problem, budget)
+  success_threshold: 0.5         # tau: B* = smallest budget solved >= half the time
+  temperature: 0.7
+  top_p: 0.9
+  batch_size: 6
+  problems: problems.jsonl       # swap for a smaller file to label fewer
+  max_problems: null
+  output: budgets.jsonl
+
+# ---------------------------------------------------------------- Stage 3
+# Forward pass only, no generation -- cheap enough to run on every problem
+# even though budget labeling runs on far fewer.
+extract:
+  model_name: Qwen/Qwen2.5-Math-1.5B
+  prompt_template: "{problem}"
+  # `output_hidden_states` computes every layer anyway, so taking all of them
+  # costs almost nothing -- and which layer carries the signal is exactly the
+  # open question. Re-running on a GPU to try another layer is the expensive
+  # mistake this avoids.
+  all_layers: true
+  all_layers_pooling: mean
+  features: []                   # extra (layer, pooling) pairs beyond all_layers
+    # - {layer: 14, pooling: std}
+    # - {layer: -1, pooling: last}    # negative resolves to absolute: L28_last
+  geometry:                      # scalar shape statistics of the token cloud
+    - {layer: 14, metric: l2_norm}
+    - {layer: 14, metric: effective_rank}
+    - {layer: -1, metric: anisotropy}
+  batch_size: 8
+  max_input_tokens: 512          # input truncation, NOT a generation budget
+  dtype: bfloat16
+  device: cuda
+  problems: problems.jsonl
+  output: hidden_states.parquet
+
+# ---------------------------------------------------------------- Stage 4
+train:
+  # classification: P(solved | features, budget). Uses censored problems as
+  #   honest zeros and works on single-budget data. The default.
+  # regression: predicts B* directly. Needs a real multi-budget sweep and
+  #   drops censored problems, which are exactly the hard ones.
+  mode: classification
+  layers: all                    # or a list: [L14_mean]
+  # Feature blocks to stack. `surface` is the length baseline that has to be
+  # beaten for the result to mean anything. Note there is no `level` block:
+  # the human difficulty label is evaluation-only, never a model input.
+  features: [surface, subject, activations]
+  n_pcs: 10                      # PCA components of the activation vector
+  cv: auto                       # leave-one-out below 60 problems, else 5-fold
+  compare_models: false          # also fit MLP/GP/ElasticNet for comparison
+  min_solved_for_regression: 15
+  problems: problems.jsonl
+  budgets: budgets.jsonl
+  hidden_states: hidden_states.parquet
+  output: oracle.joblib
+  metrics: metrics.json
+
+# ---------------------------------------------------------------- Stage 5
+report:
+  plots: true

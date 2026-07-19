@@ -1,9 +1,14 @@
-# Local pipeline (data prep, merging, analysis, oracle) -- CPU only, no GPU needed.
-# The Colab notebook installs its own (transformers, accelerate, torch+cuda) via
-# its first cell; it does not need this file.
+# Pinned mirror of pyproject.toml's core dependencies, for environments that
+# want a requirements file. `pip install -e .` is the supported path.
+#
+# CPU only: sampling, oracle training, analysis, reporting.
+# Hidden-state extraction additionally needs `pip install -e ".[gpu]"`.
 datasets
 scikit-learn
 scipy
 matplotlib
 joblib
 numpy
+pandas
+pyarrow
+pyyaml

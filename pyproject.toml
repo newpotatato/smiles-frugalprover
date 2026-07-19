@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "frugalprover"
 version = "0.1.0"
-description = "FrugalProver pilot: shared library + per-direction experiments testing whether solve-effort is predictable from a small model's activations."
+description = "FrugalProver: a staged pipeline for predicting math-problem solve effort from a small model's hidden states."
 requires-python = ">=3.9"
 # Created during SMILES 2026.
 authors = [
@@ -14,8 +14,9 @@ authors = [
     { name = "Nika Smirnova", email = "nika646470@gmail.com" },     # AIRI
     { name = "Alima Chekueva" },
 ]
-# Local pipeline deps (CPU only). The Colab extraction notebooks install their
-# own GPU stack (transformers/accelerate/torch+cuda) in their first cell.
+# CPU-only core: sampling, oracle training, analysis, reporting. Generating
+# text and reading hidden states needs the [gpu] extra; keeping torch out of
+# the base install means the whole analysis path works on a laptop.
 dependencies = [
     "datasets",
     "scikit-learn",
@@ -23,7 +24,20 @@ dependencies = [
     "matplotlib",
     "joblib",
     "numpy",
+    "pandas",
+    "pyarrow",
+    "pyyaml",
 ]
+
+[project.optional-dependencies]
+# transformers 5.x requires torch>=2.4 and silently disables all model classes
+# on older torch ("AutoModel requires the PyTorch library but it was not
+# found"). Capped at <5 so the extras install works on torch 2.3.x; lift the
+# cap once you're on torch>=2.4 everywhere.
+gpu = ["torch>=2.0", "transformers>=4.44,<5", "accelerate", "tqdm"]
+
+[project.scripts]
+frugalprover = "frugalprover.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

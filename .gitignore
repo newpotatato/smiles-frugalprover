@@ -20,14 +20,19 @@ Thumbs.db
 FrugalProver_TeamPackage.zip
 _package_staging/
 
-# Raw pilot outputs -- activations at ALL layers for hundreds of problems
-# serialize to well over 100MB of JSON (GitHub's hard per-file limit), so
-# these are regenerated locally/in Colab and shared out-of-band (Drive/LFS),
-# not committed. Plots (*.png) and the fitted oracle_model.joblib are small
-# and ARE tracked -- only the raw per-problem activation dumps are excluded.
-# These land in data/ (merge_results.py reads them from there and writes
-# data/pilot_results.jsonl, which is likewise a large regenerable artifact).
-data/pilot_*.jsonl
+# Pipeline artifacts. Every one of these is regenerable from a config
+# (`frugalprover run-all --config ...`), and the hidden states in particular
+# are large: pooled vectors at all ~29 layers for a few hundred problems run
+# to tens of MB, and the raw JSON equivalent blew past GitHub's 100MB limit.
+# Shared out-of-band (Drive) rather than committed.
+data/*/
+!data/.gitkeep
+
+# Run outputs. The oracle (.joblib), metrics.json and plots are small, but
+# they're derived artifacts -- results are reported in slides/ and docs/, and
+# a run is reproduced from its config.yaml rather than pulled from git.
+results/*/
+!results/.gitkeep
 
 # Editable-install / build metadata
 src/*.egg-info/
