@@ -1,0 +1,41 @@
+# Tiny CPU-only config that exercises the whole pipeline in seconds.
+# Nothing here produces meaningful numbers -- it proves plumbing, not science.
+run_name: smoke
+seed: 0
+
+sample:
+  subjects: [algebra, counting_and_probability]
+  per_level_per_subject: 2
+  n_problems: 20
+
+budget:
+  estimator: mock            # `sweep` is the real one and is not implemented
+  agent: mock
+  budgets: [128, 256, 512]
+  n_samples: 3
+  success_threshold: 0.5
+
+extract:
+  # No model at all, so this runs anywhere -- no GPU, no torch, no download.
+  # One layer carries a planted difficulty-correlated signal, so the layer
+  # sweep has something findable and you can tell a working pipeline (picks
+  # L1_mean) from a broken one (picks a noise layer).
+  #
+  # To smoke-test the REAL extractor instead, on a machine with working torch:
+  #   --set extract.extractor=transformer --set extract.model_name=sshleifer/tiny-gpt2
+  extractor: synthetic
+  synthetic_layers: 4
+  synthetic_hidden_size: 32
+  synthetic_signal_layer: 1
+  synthetic_signal_strength: 2.5    # set to 0 for a pure-noise null baseline
+  device: cpu
+  batch_size: 4
+
+train:
+  mode: classification
+  layers: all
+  n_pcs: 2                   # hidden size is 2, so this is the ceiling
+  compare_models: false
+
+report:
+  plots: true
