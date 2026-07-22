@@ -1,0 +1,9 @@
+# Pure-noise activations (signal strength 0): the control that tells you how
+# much of the oracle's skill is real vs. an artifact of the pipeline. Layer
+# this over configs/extract/synthetic.yaml, or use it standalone on the base.
+#   frugalprover run-all -c configs/base.yaml -c configs/extract/synthetic.yaml \
+#       -c configs/extract/null_baseline.yaml --run-name pilot_null
+extract:
+  extractor: synthetic
+  device: cpu
+  synthetic_signal_strength: 0

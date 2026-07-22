@@ -1,0 +1,6 @@
+# Deterministic fake budget labels, so stages 3-5 run without the (as yet
+# unimplemented) sweep. Nothing it produces is a research result.
+#   frugalprover run-all -c configs/base.yaml -c configs/budget/mock.yaml
+budget:
+  estimator: mock
+  agent: mock

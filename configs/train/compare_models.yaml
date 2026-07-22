@@ -1,0 +1,4 @@
+# Also fit MLP / GP / ElasticNet alongside the default model, for comparison.
+#   frugalprover train -c configs/base.yaml -c configs/train/compare_models.yaml
+train:
+  compare_models: true

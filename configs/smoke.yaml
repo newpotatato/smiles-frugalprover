@@ -1,5 +1,12 @@
 # Tiny CPU-only config that exercises the whole pipeline in seconds.
 # Nothing here produces meaningful numbers -- it proves plumbing, not science.
+#
+# Kept as a single file for one-command convenience:
+#   frugalprover run-all -c configs/smoke.yaml
+# The same run composes from the base plus three fragments, if you'd rather:
+#   frugalprover run-all -c configs/base.yaml -c configs/sample/small.yaml \
+#       -c configs/budget/mock.yaml -c configs/extract/synthetic.yaml \
+#       --run-name smoke --set train.n_pcs=2
 run_name: smoke
 seed: 0
 

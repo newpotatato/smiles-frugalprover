@@ -180,7 +180,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_common(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--config", "-c", help="YAML config file")
+        p.add_argument("--config", "-c", action="append", metavar="FILE",
+                       help="YAML config file; repeatable, later files override earlier "
+                            "(e.g. -c configs/base.yaml -c configs/train/regression.yaml)")
         p.add_argument("--set", "-s", action="append", metavar="KEY=VALUE",
                        help="override a config key, e.g. --set train.mode=regression (repeatable)")
         p.add_argument("--run-name", help="override run_name")

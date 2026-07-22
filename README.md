@@ -116,31 +116,45 @@ frugalprover runs
 No GPU, no model download: budget labels are mocked and hidden states are
 synthetic, with a planted signal in one layer so you can watch the layer sweep
 find it. Nothing it produces is a research result — it proves the plumbing
-works. The real config is `configs/pipeline.yaml`.
+works. The real config is `configs/base.yaml`.
 
 ### A real pilot
 
 ```bash
 # 1. Balanced MATH sample, stratified by subject x level
-frugalprover sample --config configs/pipeline.yaml
+frugalprover sample --config configs/base.yaml
 
 # 2. Budget labeling -- NOT IMPLEMENTED. Mock it for now:
-frugalprover budget --config configs/pipeline.yaml --set budget.estimator=mock
+frugalprover budget --config configs/base.yaml -c configs/budget/mock.yaml
 
 # 3. Hidden states (needs a GPU -- see docs/extract_hidden_states_colab.ipynb)
-frugalprover extract --config configs/pipeline.yaml
+frugalprover extract --config configs/base.yaml
 
 # 4. Fit the oracle, sweeping every layer
-frugalprover train --config configs/pipeline.yaml
+frugalprover train --config configs/base.yaml
 
 # 5. Metrics, predictions and plots into results/pilot/
-frugalprover report --config configs/pipeline.yaml
+frugalprover report --config configs/base.yaml
 ```
 
-Override any key without editing the config:
+### Layered configs
+
+Configs compose rather than copy. `-c` is repeatable; later files deep-merge
+onto earlier ones, and `--set` wins over all of them. A variant is a small
+fragment under `configs/<stage>/` that touches one stage — see
+[configs/README.md](configs/README.md).
 
 ```bash
-frugalprover train -c configs/pipeline.yaml --set train.mode=regression
+# base + a one-stage override, its own run dir
+frugalprover run-all -c configs/base.yaml -c configs/train/regression.yaml \
+    --run-name pilot_regression
+
+# stack several; last one wins on any shared key
+frugalprover run-all -c configs/base.yaml -c configs/sample/small.yaml \
+    -c configs/budget/mock.yaml -c configs/extract/synthetic.yaml
+
+# still fine for one-off tweaks
+frugalprover train -c configs/base.yaml --set train.mode=regression
 ```
 
 ### The two oracle framings
@@ -186,7 +200,7 @@ src/frugalprover/
     reporting/      Stage 5  results collection, run comparison
   analysis/       research analyses (layer probe, geometry, calibration,
                   learning curve)
-configs/          pipeline.yaml (real), smoke.yaml (fast, CPU, fake labels)
+configs/          base.yaml (reference) + per-stage fragments; smoke.yaml (fast)
 docs/             ARTIFACTS.md (contracts), RESEARCH_PLAN.md, proposal,
                   Colab notebooks, geometry pilot results
 references/       13 cited papers + literature synthesis
