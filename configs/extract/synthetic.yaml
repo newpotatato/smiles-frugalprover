@@ -1,0 +1,11 @@
+# No model, no GPU, no download: fabricate hidden states with a difficulty-
+# correlated signal planted in one layer, so the layer sweep has something
+# findable. Runs anywhere.
+#   frugalprover run-all -c configs/base.yaml -c configs/extract/synthetic.yaml
+extract:
+  extractor: synthetic
+  device: cpu
+  synthetic_layers: 4
+  synthetic_hidden_size: 32
+  synthetic_signal_layer: 1
+  synthetic_signal_strength: 2.5

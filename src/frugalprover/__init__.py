@@ -6,7 +6,7 @@ A five-stage pipeline, each stage independently runnable and swappable:
 
 Stages talk only through files, documented in docs/ARTIFACTS.md. Use the CLI::
 
-    frugalprover run-all --config configs/pipeline.yaml
+    frugalprover run-all --config configs/base.yaml
 
 or the library::
 

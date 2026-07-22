@@ -249,7 +249,7 @@ def _write_readme(out_dir: Path, cfg: PipelineConfig, model, metrics: dict) -> N
         "## Reproduce",
         "",
         "```",
-        f"frugalprover run-all --config configs/pipeline.yaml --run-name {cfg.run_name}",
+        f"frugalprover run-all --config configs/base.yaml --run-name {cfg.run_name}",
         "```",
     ]
     (out_dir / "README.md").write_text("\n".join(lines), encoding="utf-8")

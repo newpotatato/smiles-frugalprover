@@ -281,10 +281,10 @@ Nothing else reruns:
 
 ```bash
 # retrain with different features; stages 1-3 untouched
-frugalprover train --config configs/pipeline.yaml --set 'train.features=[surface,subject]'
+frugalprover train --config configs/base.yaml --set 'train.features=[surface,subject]'
 
 # reuse another run's expensive artifacts
-frugalprover train --config configs/pipeline.yaml --run-name ablation \
+frugalprover train --config configs/base.yaml --run-name ablation \
     --set train.hidden_states=pilot/hidden_states.parquet \
     --set train.budgets=pilot/budgets.jsonl \
     --set train.problems=pilot/problems.jsonl
@@ -305,7 +305,7 @@ a stale result:
 - **An upstream stage just re-ran**, so this stage's inputs are new.
 
 ```
-$ frugalprover run-all -c configs/pipeline.yaml --skip-existing --set train.mode=regression
+$ frugalprover run-all -c configs/base.yaml --skip-existing --set train.mode=regression
 [sample]  skipped - problems.jsonl already exists
 [budget]  skipped - budgets.jsonl already exists
 [extract] skipped - hidden_states.parquet already exists

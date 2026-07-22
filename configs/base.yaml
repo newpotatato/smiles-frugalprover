@@ -1,9 +1,12 @@
-# The real pilot config. Every key shown with its default, so this file
-# doubles as the reference -- delete anything you don't want to override.
+# The base pilot config: every key shown with its default, so this file
+# doubles as the reference. Layer variants on top instead of copying it --
+# each fragment under configs/<stage>/ touches one stage and wins over this:
 #
-# Run the whole thing:      frugalprover run-all --config configs/pipeline.yaml
-# Run one stage:            frugalprover train  --config configs/pipeline.yaml
-# Override without editing: --set train.mode=regression
+#   Run the whole thing:   frugalprover run-all -c configs/base.yaml
+#   Run one stage:         frugalprover train   -c configs/base.yaml
+#   Regression variant:    frugalprover run-all -c configs/base.yaml \
+#                              -c configs/train/regression.yaml --run-name pilot_reg
+#   One-off override:      --set train.mode=regression   (wins over every file)
 
 run_name: pilot
 seed: 0

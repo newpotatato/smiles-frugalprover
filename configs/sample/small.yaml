@@ -1,0 +1,6 @@
+# A quick 20-problem draw over two subjects, for iterating on plumbing.
+#   frugalprover run-all -c configs/base.yaml -c configs/sample/small.yaml
+sample:
+  subjects: [algebra, counting_and_probability]
+  per_level_per_subject: 2
+  n_problems: 20

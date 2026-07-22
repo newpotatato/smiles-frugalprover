@@ -1,0 +1,6 @@
+# Predict B* directly instead of P(solved | features, budget).
+# Needs a real multi-budget sweep and drops censored problems.
+#   frugalprover run-all -c configs/base.yaml -c configs/train/regression.yaml \
+#       --run-name pilot_regression
+train:
+  mode: regression

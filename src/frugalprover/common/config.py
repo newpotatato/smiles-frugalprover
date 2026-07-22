@@ -1,19 +1,31 @@
-"""Typed configuration: YAML file plus `--set dotted.key=value` overrides.
+"""Typed configuration: layered YAML files plus `--set dotted.key=value`.
 
 One dataclass per stage, all hanging off :class:`PipelineConfig`. Loading is
 strict about *names* (a typo'd key raises instead of being silently ignored,
 which is how you lose an afternoon to a sweep that ran with defaults) but
 permissive about everything else.
 
-Values on the right of `--set` go through the YAML parser, so `--set
-train.n_pcs=4` gives an int, `--set extract.device=cpu` a string, and
-`--set budget.budgets=[128,512]` a list.
+**Layering.** :func:`load_config` takes any number of config files and
+deep-merges them left-to-right onto the dataclass defaults, so a variant is a
+tiny file that touches one stage rather than a full copy of the pipeline::
+
+    load_config(["configs/base.yaml", "configs/train/regression.yaml"])
+
+Each file is an ordinary (partial) :class:`PipelineConfig`; by convention the
+fragments under ``configs/<stage>/`` only set keys in their own stage. Mappings
+merge key-by-key; lists and scalars are *replaced* wholesale by the later
+layer -- a fragment that sets ``budget.budgets: [512]`` means that one budget,
+not an append onto the base's ``[128, 256, 512]``.
+
+Values on the right of `--set` go through the YAML parser (and win over every
+file), so `--set train.n_pcs=4` gives an int, `--set extract.device=cpu` a
+string, and `--set budget.budgets=[128,512]` a list.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from frugalprover.common.paths import DATA_DIR, RESULTS_DIR
 
@@ -215,15 +227,32 @@ def _resolve(name: str, run_dir: Path, root: Path) -> Path:
 
 # ------------------------------------------------------------------ loading
 
-def load_config(path: str | Path | None = None, overrides: list[str] | None = None) -> PipelineConfig:
-    """Build a config from a YAML file plus `key.path=value` override strings."""
+def load_config(
+    paths: str | Path | Sequence[str | Path] | None = None,
+    overrides: list[str] | None = None,
+) -> PipelineConfig:
+    """Build a config from one or more YAML files plus `key.path=value` strings.
+
+    `paths` may be a single path or a sequence; later files deep-merge onto
+    earlier ones (see the module docstring), then `--set` overrides win over
+    all of them.
+    """
+    if paths is None:
+        paths = []
+    elif isinstance(paths, (str, Path)):
+        paths = [paths]
+
     raw: dict[str, Any] = {}
-    if path is not None:
+    for p in paths:
         import yaml
 
-        loaded = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-        if loaded:
-            raw = loaded
+        loaded = yaml.safe_load(Path(p).read_text(encoding="utf-8"))
+        if loaded is None:
+            continue
+        if not isinstance(loaded, dict):
+            raise TypeError(f"config file {p} must be a mapping at the top level, "
+                            f"got {type(loaded).__name__}")
+        raw = _deep_merge(raw, loaded)
 
     for override in overrides or []:
         _apply_override(raw, override)
@@ -231,6 +260,24 @@ def load_config(path: str | Path | None = None, overrides: list[str] | None = No
     cfg = _from_dict(PipelineConfig, raw, path="")
     _validate(cfg)
     return cfg
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Merge `override` onto `base`, recursing into nested mappings.
+
+    Two mappings merge key-by-key; anything else -- lists, scalars, or a key
+    whose value is a mapping on one side but not the other -- is replaced
+    wholesale by `override`. Replacing lists rather than concatenating is the
+    least-surprising rule: a layer that restates `budget.budgets` gets exactly
+    the list it wrote. Returns a new dict; neither argument is mutated.
+    """
+    out = dict(base)
+    for key, val in override.items():
+        if isinstance(out.get(key), dict) and isinstance(val, dict):
+            out[key] = _deep_merge(out[key], val)
+        else:
+            out[key] = val
+    return out
 
 
 def _apply_override(raw: dict[str, Any], override: str) -> None:
