@@ -1,0 +1,8 @@
+# Hidden states from DeepSeek-R1-Distill-Qwen-1.5B (28 layers, hidden 1536).
+# float16 rather than the base's bfloat16 -- matches the Colab run that
+# produced data/deepseek_r1_qwen7b/hidden_states.parquet.
+#   frugalprover extract -c configs/base.yaml \
+#       -c configs/extract/deepseek_r1_distill_qwen_1.5b.yaml
+extract:
+  model_name: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+  dtype: float16
