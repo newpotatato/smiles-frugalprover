@@ -1,0 +1,88 @@
+run_name: deepseek_r1_qwen7b
+seed: 0
+data_dir: C:\Users\michlea\Documents\GitHub\smiles-frugalprover\data
+results_dir: C:\Users\michlea\Documents\GitHub\smiles-frugalprover\results
+sample:
+  dataset_name: EleutherAI/hendrycks_math
+  subjects:
+  - algebra
+  - counting_and_probability
+  - geometry
+  - intermediate_algebra
+  - number_theory
+  - prealgebra
+  - precalculus
+  split: test
+  seed: 0
+  per_level_per_subject: 12
+  n_problems: 300
+  require_boxed_answer: true
+  output: problems.jsonl
+budget:
+  estimator: sweep
+  agent: Qwen/Qwen2.5-1.5B-Instruct
+  budgets:
+  - 128
+  - 256
+  - 512
+  n_samples: 3
+  success_threshold: 0.5
+  temperature: 0.7
+  top_p: 0.9
+  batch_size: 6
+  prompt_template: 'Problem:
+
+    {problem}
+
+
+    Solve step by step, then give the final answer in \boxed{{}}.
+
+
+    Solution:'
+  problems: problems.jsonl
+  max_problems: null
+  seed: 0
+  output: budgets.jsonl
+extract:
+  extractor: transformer
+  model_name: Qwen/Qwen2.5-Math-1.5B
+  prompt_template: '{problem}'
+  features: []
+  geometry:
+  - layer: 14
+    metric: l2_norm
+  - layer: 14
+    metric: effective_rank
+  - layer: -1
+    metric: anisotropy
+  all_layers: true
+  all_layers_pooling: mean
+  batch_size: 8
+  max_input_tokens: 512
+  dtype: bfloat16
+  device: cuda
+  problems: problems.jsonl
+  output: hidden_states.parquet
+  synthetic_layers: 4
+  synthetic_hidden_size: 32
+  synthetic_signal_layer: 1
+  synthetic_signal_strength: 2.5
+  synthetic_seed: 0
+train:
+  mode: regression
+  layers: all
+  features:
+  - surface
+  - subject
+  - activations
+  n_pcs: 10
+  cv: auto
+  compare_models: false
+  min_solved_for_regression: 15
+  budgets: budgets.jsonl
+  problems: problems.jsonl
+  hidden_states: hidden_states.parquet
+  output: oracle.joblib
+  metrics: metrics.json
+report:
+  plots: true
