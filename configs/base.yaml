@@ -102,3 +102,29 @@ train:
 # ---------------------------------------------------------------- Stage 5
 report:
   plots: true
+
+# ---------------------------------------------------------------- Agent
+# The solving agent whose effort the oracle predicts. Separate from
+# `budget.agent` (a model *name*); this block is the agent's *architecture*.
+#
+# `verify_repair` is the propose-verify-repair loop: the prover writes a
+# candidate, k skeptical verifiers audit it, the corrector fixes what they flag,
+# and it iterates until the verifiers agree. `single` is a one-shot baseline.
+#
+# Backends are abstract for now: only `client: mock` runs (on CPU). Layer
+# configs/agent/mock.yaml to run the loop end-to-end:
+#   frugalprover prove -c configs/base.yaml -c configs/agent/mock.yaml --problems <file>
+agent:
+  type: verify_repair            # single | verify_repair
+  # Each role names its own model. Make the verifiers heterogeneous so the trio
+  # isn't fooled by the same bad step (client: openai | hf are stubs for now).
+  prover:    {client: mock, model: mock, temperature: 0.7, top_p: 0.9, max_tokens: 2048}
+  corrector: {client: mock, model: mock, temperature: 0.7, top_p: 0.9, max_tokens: 2048}
+  verifiers:
+    - {client: mock, model: mock, temperature: 0.3, top_p: 0.9, max_tokens: 1024}
+    - {client: mock, model: mock, temperature: 0.3, top_p: 0.9, max_tokens: 1024}
+    - {client: mock, model: mock, temperature: 0.3, top_p: 0.9, max_tokens: 1024}
+  max_rounds: 4                  # cap; on exhaustion, apply on_nonconvergence
+  aggregation: unanimity         # unanimity | majority (the central safety dial)
+  independence: blind            # blind (audit independently) | debate (see peers)
+  on_nonconvergence: reject      # reject | flag
