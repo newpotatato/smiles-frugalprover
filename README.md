@@ -186,12 +186,80 @@ oracle.save("oracle.joblib")
 `import frugalprover` doesn't pull in torch, transformers or datasets — the
 analysis path works on a laptop with no GPU stack.
 
+## The solving agent
+
+`agent/` is the solver whose effort the oracle predicts. The default realization
+is a **verify-repair loop**: a prover proposes a candidate proof, an ensemble of
+*k ≥ 3* skeptical verifiers audits it, a corrector repairs whatever they flag,
+and the loop iterates until the verifiers concur — at which point the candidate
+is accepted. The prover is held untrusted until verification passes.
+
+Four control-flow dials, all in the `agent:` config block, pin it down: the
+stopping rule (`max_rounds`, `on_nonconvergence`), the aggregation rule
+(`unanimity` vs `majority`), the feedback contract (verifiers hand the corrector
+*specific diagnosed flaws*, not pass/fail), and verifier independence (`blind`
+vs `debate`). Defaults are unanimity / blind / reject — the safety-first corner.
+
+**Each role picks its own model.** `agent.prover`, `agent.corrector`, and each
+of `agent.verifiers` is a `ModelSpec` (client + model + decoding params), so the
+verifiers can be a heterogeneous trio that isn't fooled by the same bad step.
+Model backends are abstract for now: `client: mock` runs the whole loop on CPU
+with no models or network; `client: openai` (a vLLM-served, OpenAI-compatible
+endpoint) and `client: hf` (local `transformers`) are registered but raise until
+implemented. The loop is **batched across tasks** — every attempt advances in
+lockstep and each role's call spans the whole active set — so a batching backend
+processes one big call per step, not one prompt at a time.
+
+See [src/frugalprover/agent/README.md](src/frugalprover/agent/README.md) for the
+internals.
+
+### Running it — CLI
+
+```bash
+# Run the loop on a problems file with the mock backend (CPU, no download).
+frugalprover prove \
+    -c configs/base.yaml -c configs/agent/mock.yaml \
+    --problems data/smoke/problems.jsonl \
+    --run-name smoke --out prove.jsonl
+```
+
+Writes one row per problem to `data/<run_name>/prove.jsonl`:
+`{id, status, accepted, rounds, flaws, tokens, candidate}`. `--max-problems N`
+caps the input. The intended production config is
+[configs/agent/qwen_trio.yaml](configs/agent/qwen_trio.yaml) — an R1-Distill
+prover/corrector with a `Qwen3-32B + R1-Distill-32B + gpt-oss-20b` verifier trio;
+it fails fast today because the `openai` backend is still a stub.
+
+### Running it — Python
+
+```python
+from frugalprover.agent import build_agent
+from frugalprover.common.config import load_config
+from frugalprover.common.records import ProblemRecord
+
+cfg = load_config(["configs/base.yaml", "configs/agent/mock.yaml"])
+agent = build_agent(cfg.agent)          # picks the type in agent.type
+agent.setup()
+
+problems = [ProblemRecord(id="p1", problem="What is 2 + 2?", answer="4", type="algebra")]
+completions = agent.solve_batch(problems, max_new_tokens=0, n_samples=1)
+agent.teardown()
+
+print(completions[0][0])                # the accepted (or rejected) candidate
+print(agent.last_traces[0][0])          # {status, accepted, rounds, flaws, tokens}
+```
+
+`solve_batch` returns `list[list[str]]` — `n_samples` completions per problem.
+`max_new_tokens=0` means no token cap (standalone use); a positive value caps an
+attempt's total generated tokens, which is how Stage 2 will sweep the budget over
+the agent. `agent.last_traces` carries the per-attempt diagnostics.
+
 ## Layout
 
 ```
 src/frugalprover/
   common/         config, artifact I/O, records, grading
-  agent/          Prover -- PROTOCOL ONLY, see its README
+  agent/          the solving agent: prover -> verifiers -> corrector loop
   oracle/         the Budget Oracle, as five stages
     sample/         Stage 1  problem sampling
     budget/         Stage 2  budget labeling (unimplemented + mock)
