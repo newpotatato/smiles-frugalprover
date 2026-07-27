@@ -36,6 +36,12 @@ dependencies = [
 # found"). Capped at <5 so the extras install works on torch 2.3.x; lift the
 # cap once you're on torch>=2.4 everywhere.
 gpu = ["torch>=2.0", "transformers>=4.44,<5", "accelerate", "tqdm"]
+# bitsandbytes backs `agent.<role>.quantization: 8bit|4bit` (see agent/model.py).
+# Additive on top of [gpu], not a superset of it -- install both:
+#   pip install -e ".[gpu,quant]"
+# Kept separate because bitsandbytes ships CUDA-only wheels: folding it into
+# [gpu] would break that install on any machine where [gpu] works fine on CPU.
+quant = ["bitsandbytes>=0.43"]
 
 [project.scripts]
 frugalprover = "frugalprover.cli:main"

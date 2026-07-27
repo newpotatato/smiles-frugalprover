@@ -42,6 +42,8 @@ SUBJECTS = [
 
 POOLINGS = ["mean", "sum", "std", "max", "last"]
 METRICS = ["l2_norm", "mean_token_norm", "token_norm_std", "anisotropy", "effective_rank"]
+#: bitsandbytes load modes for the `hf` agent client (see ModelSpec.quantization).
+QUANTIZATIONS = ["none", "8bit", "4bit"]
 
 SOLVE_PROMPT = (
     "Problem:\n{problem}\n\n"
@@ -222,6 +224,12 @@ class ModelSpec:
     #: hf only: prompts per model.generate call, bounding peak GPU memory when the
     #: loop's active set is large. Ignored by mock/openai.
     max_batch_size: int = 8
+    #: hf only: load the weights quantized via bitsandbytes (CUDA only), trading
+    #: accuracy for memory -- 4bit puts a 7B in ~5GB against ~15GB at bf16, which
+    #: is the difference between fitting a 16GB card and not. Roles sharing a
+    #: model must agree: the loaded-weight cache keys on (model, quantization),
+    #: so a mismatch loads a second copy and defeats the sharing.
+    quantization: str = "none"     # none | 8bit | 4bit
 
 
 @dataclass
@@ -459,8 +467,10 @@ def _validate(cfg: PipelineConfig) -> None:
     check(a.on_nonconvergence, ["reject", "flag"], "agent.on_nonconvergence")
     for role, spec in [("prover", a.prover), ("corrector", a.corrector)]:
         check(spec.client, ["mock", "openai", "hf"], f"agent.{role}.client")
+        check(spec.quantization, QUANTIZATIONS, f"agent.{role}.quantization")
     for i, spec in enumerate(a.verifiers):
         check(spec.client, ["mock", "openai", "hf"], f"agent.verifiers[{i}].client")
+        check(spec.quantization, QUANTIZATIONS, f"agent.verifiers[{i}].quantization")
     if a.max_rounds < 1:
         raise ValueError(f"agent.max_rounds must be >= 1, got {a.max_rounds}")
     if a.type == "verify_repair" and len(a.verifiers) < 1:

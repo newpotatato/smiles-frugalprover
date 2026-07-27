@@ -158,18 +158,22 @@ class HFClient(ModelClient):
     Generation is chunked into sub-batches of at most ``spec.max_batch_size`` so a
     large active set can't exhaust GPU memory in one call.
 
+    ``spec.quantization`` (``8bit`` / ``4bit``, CUDA only) loads the weights
+    through bitsandbytes instead of at full dtype -- the lever that fits a 7B on a
+    16GB card.
+
     Loaded weights are shared across all instances via the class-level
     :attr:`_cache`: two clients naming the same ``spec.model`` (e.g. a prover and
     a verifier on one 7B) reuse a single copy instead of loading it twice. The
     copy is reference-counted and freed when the last client using it tears down.
     """
 
-    #: Class-level cache of loaded models, keyed by repo id / path, shared by
-    #: every HFClient in the process. The verify-repair loop builds a separate
-    #: client per role and a trio commonly reuses the same checkpoint, so without
-    #: sharing each role would load its own copy and multiply GPU memory by the
-    #: role count. dtype/device are derived deterministically from the hardware,
-    #: so the model id alone identifies the artifact. `_lock` guards it so
+    #: Class-level cache of loaded models, keyed by (repo id / path, quantization),
+    #: shared by every HFClient in the process. The verify-repair loop builds a
+    #: separate client per role and a trio commonly reuses the same checkpoint, so
+    #: without sharing each role would load its own copy and multiply GPU memory by
+    #: the role count. dtype/device are derived deterministically from the hardware,
+    #: so those two fields identify the loaded artifact. `_lock` guards it so
     #: concurrent setups don't double-load.
     _cache: dict[str, _LoadedModel] = {}
     _lock = threading.Lock()
@@ -181,16 +185,27 @@ class HFClient(ModelClient):
         self.device = None
         self._cached = False  # this client holds a reference in the class cache
 
+    @property
+    def _cache_key(self) -> str:
+        return f"{self.spec.model}|{self._quantization}"
+
+    @property
+    def _quantization(self) -> str:
+        return (self.spec.quantization or "none").lower()
+
     def setup(self) -> None:
         if self.model is not None:
             return
-        key = self.spec.model
+        key = self._cache_key
         with HFClient._lock:
             entry = HFClient._cache.get(key)
             if entry is None:
-                entry = self._load(key)
+                entry = self._load(self.spec.model)
                 HFClient._cache[key] = entry
-                log.info("loaded %s for agent client 'hf': device=%s", key, entry.device)
+                log.info(
+                    "loaded %s for agent client 'hf': device=%s quantization=%s",
+                    self.spec.model, entry.device, self._quantization,
+                )
             else:
                 log.info("reusing cached %s for agent client 'hf'", key)
             entry.refcount += 1
@@ -225,6 +240,15 @@ class HFClient(ModelClient):
         else:
             dtype = torch.float32
 
+        quant = self._quantization
+        # Checked before anything is fetched: a misconfigured run should fail in
+        # seconds, not after pulling a checkpoint.
+        if quant != "none" and device != "cuda":
+            raise RuntimeError(
+                f"quantization={quant!r} needs a CUDA GPU (bitsandbytes has no "
+                "CPU kernels); set quantization: none to run on CPU."
+            )
+
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
@@ -232,10 +256,47 @@ class HFClient(ModelClient):
         # between the prompt and the continuation and corrupt every sample.
         tokenizer.padding_side = "left"
 
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id, torch_dtype=dtype
-        ).to(device).eval()
-        return _LoadedModel(model=model, tokenizer=tokenizer, device=device)
+        # low_cpu_mem_usage streams the checkpoint shard by shard into the target
+        # dtype instead of materializing a full copy in RAM first -- the load-time
+        # spike is what kills a small box before a single token is generated.
+        kwargs = dict(torch_dtype=dtype, low_cpu_mem_usage=True)
+        if quant == "none":
+            model = AutoModelForCausalLM.from_pretrained(model_id, **kwargs)
+            model = model.to(device)
+        else:
+            kwargs["quantization_config"] = self._quant_config(quant, dtype)
+            # bitsandbytes places the shards itself and a quantized model rejects a
+            # later .to(), so pin every layer to GPU 0 at load and skip the move.
+            kwargs["device_map"] = {"": 0}
+            model = AutoModelForCausalLM.from_pretrained(model_id, **kwargs)
+        return _LoadedModel(model=model.eval(), tokenizer=tokenizer, device=device)
+
+    @staticmethod
+    def _quant_config(quant: str, compute_dtype: Any) -> Any:
+        """bitsandbytes config for `8bit` / `4bit`.
+
+        4bit uses NF4 with double quantization -- the configuration the QLoRA
+        paper reports as matching bf16 accuracy most closely, and the one worth
+        defaulting to since the whole point here is to lose as little as possible
+        for the memory saved.
+        """
+        try:
+            import bitsandbytes  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                f"agent model quantization={quant!r} needs bitsandbytes: "
+                "pip install 'frugalprover[quant]'"
+            ) from e
+        from transformers import BitsAndBytesConfig
+
+        if quant == "8bit":
+            return BitsAndBytesConfig(load_in_8bit=True)
+        return BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=compute_dtype,
+        )
 
     def generate(
         self,
@@ -307,6 +368,12 @@ class HFClient(ModelClient):
             return super().count_tokens(text)
         return len(self.tokenizer.encode(text, add_special_tokens=False))
 
+    def describe(self) -> dict:
+        # Quantization changes what the weights answer, so it belongs in the A2
+        # sidecar next to the model id -- two runs of "the same model" at 4bit and
+        # bf16 are not the same labeling run.
+        return {**super().describe(), "quantization": self._quantization}
+
     def teardown(self) -> None:
         # Drop this client's references first, then release its hold on the
         # shared copy. The weights are freed only once the last client using
@@ -318,11 +385,11 @@ class HFClient(ModelClient):
         self._cached = False
         freed = False
         with HFClient._lock:
-            entry = HFClient._cache.get(self.spec.model)
+            entry = HFClient._cache.get(self._cache_key)
             if entry is not None:
                 entry.refcount -= 1
                 if entry.refcount <= 0:
-                    del HFClient._cache[self.spec.model]
+                    del HFClient._cache[self._cache_key]
                     freed = True
         if freed:
             try:
