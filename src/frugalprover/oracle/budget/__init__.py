@@ -6,7 +6,7 @@ implements one method.
 """
 from __future__ import annotations
 
-from frugalprover.common.config import BudgetConfig, PipelineConfig
+from frugalprover.common.config import AgentConfig, BudgetConfig, PipelineConfig
 from frugalprover.common.io import (
     append_jsonl,
     existing_ids,
@@ -32,13 +32,24 @@ ESTIMATORS = {
 }
 
 
-def build_estimator(cfg: BudgetConfig) -> BudgetEstimator:
+def build_estimator(
+    cfg: BudgetConfig, agent_cfg: AgentConfig | None = None
+) -> BudgetEstimator:
     try:
         cls = ESTIMATORS[cfg.estimator]
     except KeyError:
         raise ValueError(
             f"unknown budget.estimator {cfg.estimator!r}. Available: {sorted(ESTIMATORS)}"
         ) from None
+    # The sweep estimator drives the pipeline's solving agent; the mock needs no
+    # agent at all. Only pass the agent config to the estimator that uses it.
+    if cls is TokenSweepEstimator:
+        if agent_cfg is None:
+            raise ValueError(
+                "budget.estimator='sweep' needs the pipeline agent config; "
+                "call build_estimator(cfg.budget, cfg.agent)."
+            )
+        return cls(cfg, agent_cfg)
     return cls(cfg)
 
 
@@ -72,9 +83,10 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
         print(f"nothing to do - all {len(problems)} problems already in {out}")
         return [BudgetRecord.from_dict(d) for d in read_jsonl(out)]
 
-    estimator = build_estimator(bc)
+    estimator = build_estimator(bc, cfg.agent)
+    agent_desc = bc.agent if bc.estimator == "mock" else cfg.agent.prover.model
     print(f"labeling {len(todo)} problems with estimator={bc.estimator!r} "
-          f"agent={bc.agent!r} budgets={bc.budgets} n_samples={bc.n_samples}")
+          f"agent={agent_desc!r} budgets={bc.budgets} n_samples={bc.n_samples}")
 
     estimator.setup()
     try:
@@ -89,13 +101,19 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
     sort_jsonl_by_id(out)
     records = [BudgetRecord.from_dict(d) for d in read_jsonl(out)]
     stats = describe(records)
-    write_meta(out, {
+    meta = {
         "artifact": "budgets",
         "produced_by": f"frugalprover.oracle.budget:{type(estimator).__name__}",
         "config": bc.__dict__,
         "n_records": len(records),
         **stats,
-    })
+    }
+    # For an agent-driven sweep, record which agent actually produced the labels
+    # (bc.agent is superseded by the full agent config under estimator='sweep').
+    agent = getattr(estimator, "agent", None)
+    if agent is not None:
+        meta["agent_spec"] = agent.spec
+    write_meta(out, meta)
 
     print(f"\nwrote {len(records)} budget labels -> {out}")
     print(f"  solved: {stats['n_solved']}/{len(records)}  censored: {stats['n_censored']}")

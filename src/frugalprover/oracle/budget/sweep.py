@@ -1,94 +1,135 @@
-"""The real budget estimator. NOT IMPLEMENTED YET.
+"""The real budget estimator: sweep the token cap over a solving agent.
 
-This is the one expensive stage in the pipeline and the only one still missing.
-Everything around it exists: the record schema, the resumable runner, the
-config, and a mock that lets Stages 3-5 run today. What's left is one method.
+For each problem this runs the agent (`cfg.agent` of the pipeline -- the full
+prover -> verifier -> corrector `SolverAgent`, or the single-call baseline) once
+per budget in `cfg.budgets`, grades the completions, and records the smallest
+budget that clears the success threshold as ``b_star``.
 
-Read :class:`TokenSweepEstimator.estimate_batch`'s docstring for the spec, and
-docs/reference_budget_notebook.ipynb for a working single-GPU sketch of the
-same loop written before the library existed.
+The agent owns its own decoding and prompt (each role's `ModelSpec` and the
+`AgentConfig` prompts); this stage only chooses *how many tokens* it may spend.
+So `budget.temperature`, `budget.top_p`, and `budget.prompt_template` are unused
+under this estimator -- the agent config is authoritative. `budget.agent` (a bare
+model name) is likewise superseded; the record's `agent` field is taken from the
+agent's prover model.
+
+See docs/reference_budget_notebook.ipynb for a single-GPU sketch of the same
+loop written before the library existed, and docs/ARTIFACTS.md for the A2
+contract.
 """
 from __future__ import annotations
 
-from frugalprover.common.config import BudgetConfig
+from collections import Counter
+from typing import TYPE_CHECKING
+
+from frugalprover.common.config import AgentConfig, BudgetConfig
+from frugalprover.common.grading import extract_answer, grade, normalize
 from frugalprover.common.records import BudgetRecord, ProblemRecord
+
+if TYPE_CHECKING:
+    # Type-only: never a runtime import, keeping the one-way oracle -> (no) agent
+    # dependency intact. The concrete agent is built lazily in setup().
+    from frugalprover.agent.base import Sample
 
 
 class TokenSweepEstimator:
-    """Measure solve effort by sweeping the generation token cap.
+    """Measure solve effort by sweeping the generation token cap over an agent."""
 
-    **Not implemented.** Set ``budget.estimator: mock`` to exercise the rest of
-    the pipeline, or implement :meth:`estimate_batch` below.
-    """
-
-    def __init__(self, cfg: BudgetConfig):
+    def __init__(self, cfg: BudgetConfig, agent_cfg: AgentConfig):
         self.cfg = cfg
+        self.agent_cfg = agent_cfg
+        self.agent = None
 
     def setup(self) -> None:
-        """Load the solving agent (`cfg.agent`) and its tokenizer onto the GPU.
+        """Build the solving agent from the pipeline's `agent` config and load it.
 
-        This will eventually construct a `frugalprover.agent.SolverAgent` rather
-        than a bare model, so that swapping in a multi-step or tool-using agent
-        doesn't require touching this file.
+        Going through `SolverAgent` (not a bare model) is the point of the
+        indirection: swapping in a multi-step or tool-using agent needs no change
+        here, because this stage only ever calls `solve_batch`.
         """
-        raise NotImplementedError(_SPEC)
+        from frugalprover.agent import build_agent
+
+        self.agent = build_agent(self.agent_cfg)
+        self.agent.setup()
 
     def estimate_batch(self, problems: list[ProblemRecord]) -> list[BudgetRecord]:
-        """Sweep token caps and return one A2 record per problem.
+        if self.agent is None:
+            raise RuntimeError("call setup() before estimate_batch()")
+        cfg = self.cfg
+        budgets = sorted(cfg.budgets)
 
-        What a conforming implementation must do, for each problem:
+        # Per-problem accumulators, keyed by budget. Independent measurement per
+        # budget; from_counts derives b_star as the smallest budget clearing tau.
+        n_success: list[dict[int, int]] = [{} for _ in problems]
+        sc: list[dict[int, float]] = [{} for _ in problems]
+        tokens_spent = [0 for _ in problems]
 
-        1. Render the prompt: ``cfg.prompt_template.format(problem=p.problem)``.
+        # Sweep by budget, not by problem: one solve_batch handles every problem
+        # at budget B before moving to the next B (all at 128, then all at 256).
+        for budget in budgets:
+            solved = self._solve_at(problems, budget)  # list[list[Sample]]
+            for i, (p, samples) in enumerate(zip(problems, solved)):
+                texts = [s.text for s in samples]
+                n_success[i][budget] = sum(grade(t, p.answer) for t in texts)
+                sc[i][budget] = self._self_consistency(texts, p.answer)
+                tokens_spent[i] += sum(s.tokens for s in samples)
 
-        2. For each budget ``B`` in ``cfg.budgets`` (ascending), generate
-           ``cfg.n_samples`` completions with ``max_new_tokens=B``,
-           ``do_sample=True``, ``temperature=cfg.temperature``,
-           ``top_p=cfg.top_p``. Decode only the newly generated tokens --
-           leaving the prompt in means the gold answer, if it appears in the
-           prompt, gets graded as the model's own output.
+        agent_label = self.agent_cfg.prover.model
+        return [
+            BudgetRecord.from_counts(
+                problem_id=p.id,
+                agent=agent_label,
+                budgets=budgets,
+                n_samples=cfg.n_samples,
+                n_success=n_success[i],
+                success_threshold=cfg.success_threshold,
+                sc=sc[i],
+                tokens_spent=tokens_spent[i],
+            )
+            for i, p in enumerate(problems)
+        ]
 
-        3. Grade each completion with
-           ``frugalprover.common.grading.grade(text, problem.answer)`` and count
-           the successes at that budget.
+    def _solve_at(self, problems: list[ProblemRecord], budget: int) -> list[list[Sample]]:
+        """Solve every problem under a total-token cap of `budget`.
 
-        4. Optionally record self-consistency: the majority vote over the
-           non-null extracted answers at each budget. It costs nothing extra --
-           the samples already exist -- and it is the natural baseline the
-           oracle has to beat on allocation.
-
-        5. Build the record with
-           ``BudgetRecord.from_counts(problem.id, cfg.agent, cfg.budgets,
-           cfg.n_samples, n_success, cfg.success_threshold, sc, tokens_spent)``.
-           That helper derives ``p``, the Wilson intervals, and ``b_star``, so
-           the "smallest budget clearing tau" rule lives in exactly one place.
-
-        Return records in the same order as `problems`.
-
-        Things the runner already handles, so don't reimplement them here:
-        resume from a partial file, append-and-flush per problem, sorting the
-        final output, and writing the sidecar meta.
-
-        Two things worth getting right, because they silently corrupt labels:
-
-        - **Batch by budget, not by problem.** All problems at B=128, then all
-          at B=256. Mixing budgets in one `generate` call means padding to the
-          largest, which wastes most of the compute this stage is spending.
-
-        - **Check the tokenizer's padding side.** Decoder-only models are
-          usually left-padded for generation; slicing off the prompt with a
-          fixed `input_ids.shape[1]` is only correct when padding is uniform.
+        Each role's per-call `max_tokens` is temporarily lowered to `budget` so no
+        single model call can overshoot it. The loop already finalizes an attempt
+        once its running total reaches the cap (checked at round boundaries), but
+        without capping the calls the prover's first generation would emit its full
+        configured `max_tokens` regardless of B -- and an internal call that
+        ignores the budget makes the budget axis meaningless (CLAUDE.md invariant).
+        The role specs are shared with the built agent, so mutating them here is
+        what the loop reads; originals are restored after the pass.
         """
-        raise NotImplementedError(_SPEC)
+        specs = [
+            self.agent_cfg.prover,
+            self.agent_cfg.corrector,
+            *self.agent_cfg.verifiers,
+        ]
+        saved = [s.max_tokens for s in specs]
+        for s in specs:
+            s.max_tokens = min(s.max_tokens, budget)
+        try:
+            return self.agent.solve_batch(
+                problems, max_new_tokens=budget, n_samples=self.cfg.n_samples
+            )
+        finally:
+            for s, original in zip(specs, saved):
+                s.max_tokens = original
+
+    @staticmethod
+    def _self_consistency(completions: list[str], gold: str) -> float:
+        """1.0 if the plurality answer across samples is correct, else 0.0.
+
+        The natural allocation baseline: it costs nothing extra (the samples
+        already exist) and is what the oracle has to beat.
+        """
+        answers = [normalize(extract_answer(c)) for c in completions]
+        answers = [a for a in answers if a]
+        if not answers:
+            return 0.0
+        top, _ = Counter(answers).most_common(1)[0]
+        return 1.0 if top == normalize(gold) else 0.0
 
     def teardown(self) -> None:
-        pass
-
-
-_SPEC = (
-    "Stage 2 (budget labeling) is intentionally not implemented yet.\n"
-    "  - To exercise the rest of the pipeline now:  --set budget.estimator=mock\n"
-    "  - To implement it: see the docstring of\n"
-    "    frugalprover.oracle.budget.sweep.TokenSweepEstimator.estimate_batch,\n"
-    "    the A2 contract in docs/ARTIFACTS.md, and the working sketch in\n"
-    "    docs/reference_budget_notebook.ipynb."
-)
+        if self.agent is not None:
+            self.agent.teardown()

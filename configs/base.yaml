@@ -33,19 +33,27 @@ sample:
   output: problems.jsonl
 
 # ---------------------------------------------------------------- Stage 2
-# NOT IMPLEMENTED. `estimator: sweep` exits with a pointer to the spec.
-# Use `mock` to exercise Stages 3-5 with synthetic labels.
+# `estimator: sweep` runs the solving agent (the `agent:` block below) once per
+# budget and records the smallest budget that clears `success_threshold`. Under
+# sweep the agent config is authoritative, so `budget.agent`, `temperature`,
+# `top_p`, and `prompt_template` here are superseded by the per-role ModelSpecs.
+# Use `estimator: mock` to exercise Stages 3-5 with synthetic labels and no GPU.
 #
 # This is the expensive stage: n_problems x len(budgets) x n_samples
 # generations. Point it at a smaller file than Stage 3 uses.
 budget:
   estimator: sweep
-  agent: Qwen/Qwen2.5-1.5B-Instruct
-  budgets: [128, 256, 512]       # token caps; a single entry = one fixed pass
+  agent: Qwen/Qwen2.5-1.5B-Instruct  # mock estimator only; sweep uses `agent:` below
+  # Token caps; a single entry = one fixed pass. These defaults suit the mock
+  # agent (tiny outputs). Under sweep, match them to the real agent's appetite:
+  # a reasoning-model verify-repair loop needs budgets >= its prover max_tokens
+  # (thousands, not hundreds) or every attempt is truncated -- the paired agent
+  # config sets its own (see configs/agent/DeepSeek_R1_Distill_Qwen_7B.yaml).
+  budgets: [128, 256, 512]
   n_samples: 3                   # attempts per (problem, budget)
   success_threshold: 0.5         # tau: B* = smallest budget solved >= half the time
-  temperature: 0.7
-  top_p: 0.9
+  temperature: 0.7               # mock estimator only (sweep: set per role below)
+  top_p: 0.9                     # mock estimator only
   batch_size: 6
   problems: problems.jsonl       # swap for a smaller file to label fewer
   max_problems: null
