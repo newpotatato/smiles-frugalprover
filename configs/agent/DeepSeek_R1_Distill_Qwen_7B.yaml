@@ -7,12 +7,21 @@
 #   frugalprover prove -c configs/base.yaml -c configs/agent/DeepSeek_R1_Distill_Qwen_7B.yaml \
 #       --problems <file.jsonl>
 #
-# Runs the full verify-repair loop on DeepSeek-R1-Distill-Qwen-7B. Each role
-# builds its own client and loads its own copy of the weights (prover + corrector
-# + k verifiers), so this needs enough memory for several 7B copies -- shrink the
-# model, drop to k=1 verifier, or serve one model via the `openai`/vLLM backend
-# and share it across roles. `max_batch_size` bounds prompts per generate call:
-# lower it if the active set OOMs, raise it for throughput.
+# Runs the full verify-repair loop on DeepSeek-R1-Distill-Qwen-7B. Every role
+# here names the same checkpoint, and HFClient caches loaded weights by
+# (model, quantization), so prover + corrector + verifier share ONE copy -- the
+# footprint is one 7B, not three. The two memory dials, in order of effect:
+#
+#   quantization: 4bit  -- ~5GB of weights instead of ~15GB at bf16. Needs CUDA
+#                          and `pip install -e ".[quant]"`. Set it identically on
+#                          every role or they stop sharing and you load twice.
+#   max_batch_size      -- prompts per generate call, which is what the KV cache
+#                          scales with. Lower it if the active set OOMs mid-run;
+#                          raise it for throughput once the weights fit.
+#
+# Left unquantized by default: 4bit is a real (if small) accuracy hit, and the
+# budget labels this agent produces are the experiment's ground truth. Turn it on
+# when the alternative is not running at all.
 #
 # R1-Distill is a reasoning model (long chain-of-thought before the answer), so
 # it wants a high max_tokens and the recommended temperature 0.6 / top_p 0.95.
@@ -25,6 +34,7 @@ agent:
     top_p: 0.95
     max_tokens: 8192
     max_batch_size: 4
+    quantization: 8bit           # none | 8bit | 4bit -- keep equal across roles
   corrector:
     client: hf
     model: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
@@ -32,6 +42,7 @@ agent:
     top_p: 0.95
     max_tokens: 8192
     max_batch_size: 4
+    quantization: 8bit
   verifiers:
     - client: hf
       model: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
@@ -39,6 +50,7 @@ agent:
       top_p: 0.95
       max_tokens: 4096
       max_batch_size: 4
+      quantization: 8bit
   max_rounds: 4
   aggregation: unanimity
   independence: blind
