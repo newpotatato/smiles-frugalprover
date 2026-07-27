@@ -12,7 +12,8 @@ it and are selected with `build_agent(cfg.agent)`.
 
 - `model.py` — `ModelClient` ABC, a scriptable `MockModelClient` that runs the
   loop on CPU with no models or network, and `HFClient` (local
-  `transformers.generate`; same-model roles share one loaded copy). The `openai`
+  `transformers.generate`; same-model roles share one loaded copy, optionally
+  bitsandbytes-quantized via `ModelSpec.quantization`). The `openai`
   (vLLM-served, OpenAI-compatible) backend is registered but raises
   `NotImplementedError` with a spec until implemented.
 - `roles.py` — `Prover`, `Verifier`, `Corrector`, and `Critique` (verdict +
