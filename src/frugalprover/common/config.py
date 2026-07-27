@@ -207,10 +207,9 @@ class ReportConfig:
 class ModelSpec:
     """How one role (prover / verifier / corrector) reaches a model.
 
-    The backends are abstract for now: only ``mock`` is implemented, so the
-    whole loop runs on CPU. ``openai`` (a vLLM-served, OpenAI-compatible
-    endpoint) and ``hf`` (local ``transformers.generate``) are registered but
-    raise until someone implements them -- see agent/model.py.
+    ``mock`` runs on CPU with no weights; ``hf`` runs a local
+    ``transformers.generate`` model (see agent/model.py:HFClient); ``openai`` (a
+    vLLM-served, OpenAI-compatible endpoint) is registered but still raises.
     """
 
     client: str = "mock"           # mock | openai | hf
@@ -220,6 +219,9 @@ class ModelSpec:
     max_tokens: int = 2048         # per-call generation cap for this role
     base_url: str | None = None    # openai-compatible endpoint
     api_key_env: str | None = None  # env var holding the key, never the key itself
+    #: hf only: prompts per model.generate call, bounding peak GPU memory when the
+    #: loop's active set is large. Ignored by mock/openai.
+    max_batch_size: int = 8
 
 
 @dataclass

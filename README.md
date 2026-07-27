@@ -51,9 +51,9 @@ that were nearly solved. Doing better requires knowing something about a problem
 | Component | Status | Where |
 |---|---|---|
 | **Budget Oracle** — predicts `B̂(x)` from activations | **built** | `oracle/` |
-| **Prover** — solves under a budget | protocol only | `agent/` |
-| **Verifiers** — ensemble check, k≥3 | not started | — |
-| **Corrector** — repair loop on failure | not started | — |
+| **Prover** — solves under a budget | **built** (mock + `hf` backends run) | `agent/` |
+| **Verifiers** — ensemble check, k≥3 | **built** (in the verify-repair loop) | `agent/` |
+| **Corrector** — repair loop on failure | **built** (in the verify-repair loop) | `agent/` |
 | **Human Gate** — sole sign-off on accepted proofs | not started | — |
 | **Orchestrator** — online updates, tactic proposals | not started | — |
 
@@ -67,8 +67,8 @@ gates in [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md).
 
 | Phase | Claim | Status |
 |---|---|---|
-| **0** | Harness + ground-truth `B*` labels | infrastructure built; **budget labeling not implemented** |
-| **1** | **H1**: solve effort is predictable from activations | pipeline built, awaiting real labels |
+| **0** | Harness + ground-truth `B*` labels | **built**: agent-driven budget labeling (Stage 2 `sweep`) runs |
+| **1** | **H1**: solve effort is predictable from activations | pipeline built; Stage 2 now produces real labels |
 | **2** | **H2**: budget-aware allocation beats uniform at matched compute | not started |
 | **3** | **H3**: self-improvement without raising the false-accept rate | not started |
 | **4** | Geometry of the difficulty representation | analyses built, pilot results in `docs/geometry_pilot/` |
@@ -76,9 +76,10 @@ gates in [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md).
 Phase 1 is the linchpin. If effort isn't predictable from a cheap model's
 activations, allocation has nothing to allocate on and Phases 2–3 don't follow.
 
-> **The one blocking gap:** Phase 0's budget labeling (Stage 2 below) isn't
-> implemented. Its interface, record schema and resumable runner all exist —
-> what's missing is the generation loop. See
+> **Stage 2 budget labeling now runs** (`estimator: sweep`): it drives the
+> solving agent once per token budget and records the smallest budget that
+> clears the success threshold. What remains is compute — running it at scale on
+> real models to produce the label set Phase 1 trains on. See
 > [docs/ARTIFACTS.md](docs/ARTIFACTS.md#implementing-stage-2).
 
 ## What runs today: the Budget Oracle pipeline
@@ -124,8 +125,10 @@ works. The real config is `configs/base.yaml`.
 # 1. Balanced MATH sample, stratified by subject x level
 frugalprover sample --config configs/base.yaml
 
-# 2. Budget labeling -- NOT IMPLEMENTED. Mock it for now:
-frugalprover budget --config configs/base.yaml -c configs/budget/mock.yaml
+# 2. Budget labeling: sweep the solving agent over token budgets (needs a GPU).
+frugalprover budget --config configs/base.yaml -c configs/agent/DeepSeek_R1_Distill_Qwen_7B.yaml
+#    ...or mock the labels for a no-GPU run:
+# frugalprover budget --config configs/base.yaml -c configs/budget/mock.yaml
 
 # 3. Hidden states (needs a GPU -- see docs/extract_hidden_states_colab.ipynb)
 frugalprover extract --config configs/base.yaml
@@ -203,10 +206,10 @@ vs `debate`). Defaults are unanimity / blind / reject — the safety-first corne
 **Each role picks its own model.** `agent.prover`, `agent.corrector`, and each
 of `agent.verifiers` is a `ModelSpec` (client + model + decoding params), so the
 verifiers can be a heterogeneous trio that isn't fooled by the same bad step.
-Model backends are abstract for now: `client: mock` runs the whole loop on CPU
-with no models or network; `client: openai` (a vLLM-served, OpenAI-compatible
-endpoint) and `client: hf` (local `transformers`) are registered but raise until
-implemented. The loop is **batched across tasks** — every attempt advances in
+Model backends: `client: mock` runs the whole loop on CPU with no models or
+network; `client: hf` runs a local `transformers` model (same-model roles share
+one loaded copy). `client: openai` (a vLLM-served, OpenAI-compatible endpoint) is
+registered but still raises. The loop is **batched across tasks** — every attempt advances in
 lockstep and each role's call spans the whole active set — so a batching backend
 processes one big call per step, not one prompt at a time.
 
@@ -225,7 +228,9 @@ frugalprover prove \
 
 Writes one row per problem to `data/<run_name>/prove.jsonl`:
 `{id, status, accepted, rounds, flaws, tokens, candidate}`. `--max-problems N`
-caps the input. The intended production config is
+caps the input. To run real models locally, swap in
+[configs/agent/DeepSeek_R1_Distill_Qwen_7B.yaml](configs/agent/DeepSeek_R1_Distill_Qwen_7B.yaml) (the `hf` backend, needs a GPU).
+The intended large-scale config is
 [configs/agent/qwen_trio.yaml](configs/agent/qwen_trio.yaml) — an R1-Distill
 prover/corrector with a `Qwen3-32B + R1-Distill-32B + gpt-oss-20b` verifier trio;
 it fails fast today because the `openai` backend is still a stub.
@@ -242,17 +247,20 @@ agent = build_agent(cfg.agent)          # picks the type in agent.type
 agent.setup()
 
 problems = [ProblemRecord(id="p1", problem="What is 2 + 2?", answer="4", type="algebra")]
-completions = agent.solve_batch(problems, max_new_tokens=0, n_samples=1)
+samples = agent.solve_batch(problems, max_new_tokens=0, n_samples=1)
 agent.teardown()
 
-print(completions[0][0])                # the accepted (or rejected) candidate
+print(samples[0][0].text)               # the accepted (or rejected) candidate
+print(samples[0][0].tokens)             # tokens the agent spent producing it
 print(agent.last_traces[0][0])          # {status, accepted, rounds, flaws, tokens}
 ```
 
-`solve_batch` returns `list[list[str]]` — `n_samples` completions per problem.
-`max_new_tokens=0` means no token cap (standalone use); a positive value caps an
-attempt's total generated tokens, which is how Stage 2 will sweep the budget over
-the agent. `agent.last_traces` carries the per-attempt diagnostics.
+`solve_batch` returns `list[list[Sample]]` — `n_samples` `Sample(text, tokens)`
+per problem. `max_new_tokens=0` means no token cap (standalone use); a positive
+value caps an attempt's total generated tokens, which is how Stage 2 sweeps the
+budget over the agent (summing `Sample.tokens` for `tokens_spent`).
+`agent.last_traces` carries the richer per-attempt diagnostics for the `prove`
+CLI — it is *not* part of the `SolverAgent` protocol.
 
 ## Layout
 
@@ -262,7 +270,7 @@ src/frugalprover/
   agent/          the solving agent: prover -> verifiers -> corrector loop
   oracle/         the Budget Oracle, as five stages
     sample/         Stage 1  problem sampling
-    budget/         Stage 2  budget labeling (unimplemented + mock)
+    budget/         Stage 2  budget labeling (agent sweep + mock)
     states/         Stage 3  hidden-state extraction
     model/          Stage 4  the oracle: feature blocks, both framings
     reporting/      Stage 5  results collection, run comparison

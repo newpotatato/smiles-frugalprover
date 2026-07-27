@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from frugalprover.agent.aggregation import aggregate, collect_flaws
+from frugalprover.agent.base import Sample
 from frugalprover.agent.model import ModelClient, build_model_client
 from frugalprover.agent.roles import Corrector, Critique, Prover, Verifier
 from frugalprover.common.config import AgentConfig, ModelSpec
@@ -91,7 +92,7 @@ class VerifyRepairAgent:
         problems: list[ProblemRecord],
         max_new_tokens: int,
         n_samples: int,
-    ) -> list[list[str]]:
+    ) -> list[list[Sample]]:
         if self.prover is None:
             raise RuntimeError("call setup() before solve_batch()")
         cap = max_new_tokens if max_new_tokens and max_new_tokens > 0 else None
@@ -179,11 +180,11 @@ class VerifyRepairAgent:
 
     def _regroup(
         self, problems: list[ProblemRecord], attempts: list[_Attempt], n_samples: int
-    ) -> list[list[str]]:
-        out: list[list[str]] = [[] for _ in problems]
+    ) -> list[list[Sample]]:
+        out: list[list[Sample]] = [[] for _ in problems]
         traces: list[list[dict]] = [[] for _ in problems]
         for a in attempts:
-            out[a.prob_idx].append(a.candidate)
+            out[a.prob_idx].append(Sample(text=a.candidate, tokens=a.tokens))
             traces[a.prob_idx].append({
                 "accepted": a.accepted,
                 "status": self._status(a.accepted),
@@ -236,22 +237,23 @@ class SingleCallAgent:
         if self.prover is not None:
             self.prover.client.teardown()
 
-    def solve_batch(self, problems, max_new_tokens, n_samples) -> list[list[str]]:
+    def solve_batch(self, problems, max_new_tokens, n_samples) -> list[list[Sample]]:
         if self.prover is None:
             raise RuntimeError("call setup() before solve_batch()")
         # One batched prover call for every problem x sample.
         texts = [p.problem for p in problems for _ in range(n_samples)]
         completions = self.prover.propose(texts)
 
-        out: list[list[str]] = []
+        out: list[list[Sample]] = []
         traces: list[list[dict]] = []
         for i in range(len(problems)):
             chunk = completions[i * n_samples:(i + 1) * n_samples]
-            out.append(chunk)
+            samples = [Sample(text=c, tokens=self.prover.count_tokens(c)) for c in chunk]
+            out.append(samples)
             traces.append([
                 {"accepted": None, "status": "unverified", "rounds": 0,
-                 "flaws": [], "tokens": self.prover.count_tokens(c)}
-                for c in chunk
+                 "flaws": [], "tokens": s.tokens}
+                for s in samples
             ])
         self.last_traces = traces
         return out

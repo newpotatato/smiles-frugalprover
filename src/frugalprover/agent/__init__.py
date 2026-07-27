@@ -11,9 +11,9 @@ Select one with :func:`build_agent`; each role picks its own model via config
 """
 from __future__ import annotations
 
-from frugalprover.agent.base import SolverAgent
+from frugalprover.agent.base import Sample, SolverAgent
 
-__all__ = ["SolverAgent", "build_agent", "AGENTS"]
+__all__ = ["Sample", "SolverAgent", "build_agent", "AGENTS"]
 
 #: type name -> "module:class", imported lazily so `import frugalprover.agent`
 #: never drags in a model backend.

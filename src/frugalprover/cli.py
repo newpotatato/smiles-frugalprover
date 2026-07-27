@@ -167,8 +167,8 @@ def cmd_prove(args: argparse.Namespace) -> int:
             "accepted": t["accepted"],
             "rounds": t["rounds"],
             "flaws": t["flaws"],
-            "tokens": t["tokens"],
-            "candidate": samples[0],
+            "tokens": samples[0].tokens,
+            "candidate": samples[0].text,
         })
 
     out = cfg.data_path(args.out)

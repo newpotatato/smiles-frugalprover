@@ -5,20 +5,32 @@ The interface is deliberately thin -- text in, text out -- so the loop in
 `verify_repair.py` never knows whether it's hitting a mock, a vLLM endpoint, or
 a local transformer.
 
-Only `MockModelClient` is implemented; it needs no torch and no network, so the
-whole loop runs and is testable on a laptop. `openai` and `hf` are registered
-but raise `NotImplementedError` with a spec -- the same "seam visible, body
-later" pattern as oracle/budget/sweep.py.
+`MockModelClient` needs no torch and no network, so the whole loop runs and is
+testable on a laptop. `HFClient` runs an open model locally via `transformers`.
+`openai` is still a registered stub that raises `NotImplementedError` with a spec
+-- the same "seam visible, body later" pattern as oracle/budget/sweep.py.
 
 Nothing here imports from `oracle/`; the dependency runs one way (see
 agent/README.md).
 """
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
-from typing import Callable
+from dataclasses import dataclass
+from typing import Any, Callable
 
 from frugalprover.common.config import ModelSpec
+
+
+@dataclass
+class _LoadedModel:
+    """One (model, tokenizer) pair loaded once and shared across roles."""
+
+    model: Any
+    tokenizer: Any
+    device: str
+    refcount: int = 0
 
 
 class ModelClient(ABC):
@@ -128,21 +140,197 @@ class OpenAIClient(ModelClient):
 
 
 class HFClient(ModelClient):
-    """Local `transformers` generation.
+    """Local ``transformers`` generation with no server and no inference-time
+    network.
 
-    NOT IMPLEMENTED. A conforming body would, lazily inside `setup()`, load
-    `AutoModelForCausalLM`/`AutoTokenizer` for `spec.model` (mirroring
-    oracle/states/hf_extractor.py: `USE_TF=0`, dtype handling, cuda fallback),
-    then in `generate` batch the prompts, call `model.generate(..., do_sample=True,
-    max_new_tokens=max_tokens, temperature=temperature, top_p=top_p)`, and decode
-    only the newly generated tokens (watch the tokenizer's padding side).
+    Runs any model with an ``AutoModelForCausalLM`` head named by ``spec.model``.
+    Weights are loaded lazily in :meth:`setup` -- mirroring
+    ``oracle/states/hf_extractor.py`` for the ``USE_TF=0`` opt-out, dtype
+    selection, and CUDA fallback -- so importing ``frugalprover`` stays free of a
+    torch dependency.
+
+    :meth:`generate` batches all prompts, wraps each in a single user turn via the
+    tokenizer's chat template (the role prompts are already fully-formed
+    instructions), samples once, and decodes **only** the newly generated tokens.
+    Generation is chunked into sub-batches of at most ``spec.max_batch_size`` so a
+    large active set can't exhaust GPU memory in one call.
+
+    Loaded weights are shared across all instances via the class-level
+    :attr:`_cache`: two clients naming the same ``spec.model`` (e.g. a prover and
+    a verifier on one 7B) reuse a single copy instead of loading it twice. The
+    copy is reference-counted and freed when the last client using it tears down.
     """
 
-    def setup(self) -> None:
-        raise NotImplementedError(_HF_SPEC)
+    #: Class-level cache of loaded models, keyed by repo id / path, shared by
+    #: every HFClient in the process. The verify-repair loop builds a separate
+    #: client per role and a trio commonly reuses the same checkpoint, so without
+    #: sharing each role would load its own copy and multiply GPU memory by the
+    #: role count. dtype/device are derived deterministically from the hardware,
+    #: so the model id alone identifies the artifact. `_lock` guards it so
+    #: concurrent setups don't double-load.
+    _cache: dict[str, _LoadedModel] = {}
+    _lock = threading.Lock()
 
-    def generate(self, prompts, *, max_tokens, temperature, top_p, role="prover"):
-        raise NotImplementedError(_HF_SPEC)
+    def __init__(self, spec: ModelSpec):
+        super().__init__(spec)
+        self.model = None
+        self.tokenizer = None
+        self.device = None
+        self._cached = False  # this client holds a reference in the class cache
+
+    def setup(self) -> None:
+        if self.model is not None:
+            return
+        key = self.spec.model
+        with HFClient._lock:
+            entry = HFClient._cache.get(key)
+            if entry is None:
+                entry = self._load(key)
+                HFClient._cache[key] = entry
+                print(
+                    f"loaded {key} for agent client 'hf': device={entry.device}"
+                )
+            else:
+                print(f"reusing cached {key} for agent client 'hf'")
+            entry.refcount += 1
+        self.model = entry.model
+        self.tokenizer = entry.tokenizer
+        self.device = entry.device
+        self._cached = True
+
+    def _load(self, model_id: str) -> _LoadedModel:
+        # transformers probes TF/Flax at import and crashes the stage if either
+        # is installed but broken; this path only uses torch (see hf_extractor).
+        import os
+
+        os.environ.setdefault("USE_TF", "0")
+        os.environ.setdefault("USE_FLAX", "0")
+        os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ImportError as e:
+            raise ImportError(
+                "agent client 'hf' needs torch and transformers: "
+                "pip install 'frugalprover[gpu]'"
+            ) from e
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # fp16 on CPU is slower than fp32 and unsupported for some ops; on GPU
+        # prefer bf16 where available, else fp16, to halve the memory footprint.
+        if device == "cuda":
+            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        else:
+            dtype = torch.float32
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        # Decoder generation must pad on the left, or right-padding tokens land
+        # between the prompt and the continuation and corrupt every sample.
+        tokenizer.padding_side = "left"
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id, torch_dtype=dtype
+        ).to(device).eval()
+        return _LoadedModel(model=model, tokenizer=tokenizer, device=device)
+
+    def generate(
+        self,
+        prompts: list[str],
+        *,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        role: str = "prover",
+    ) -> list[str]:
+        if self.model is None:
+            raise RuntimeError("call setup() before generate()")
+        if not prompts:
+            return []
+        batch_size = max(1, self.spec.max_batch_size)
+        out: list[str] = []
+        for start in range(0, len(prompts), batch_size):
+            chunk = prompts[start:start + batch_size]
+            out.extend(self._generate_chunk(chunk, max_tokens, temperature, top_p))
+        return out
+
+    def _generate_chunk(
+        self, prompts: list[str], max_tokens: int, temperature: float, top_p: float
+    ) -> list[str]:
+        import torch
+
+        texts = [self._render(p) for p in prompts]
+        enc = self.tokenizer(
+            texts, return_tensors="pt", padding=True
+        ).to(self.device)
+
+        # temperature <= 0 means greedy; sampling params are ignored by
+        # transformers when do_sample=False, so gate on it to avoid warnings.
+        do_sample = temperature is not None and temperature > 0.0
+        gen_kwargs = dict(
+            max_new_tokens=max_tokens,
+            do_sample=do_sample,
+            pad_token_id=self.tokenizer.pad_token_id,
+        )
+        if do_sample:
+            gen_kwargs.update(temperature=temperature, top_p=top_p)
+
+        with torch.no_grad():
+            out = self.model.generate(**enc, **gen_kwargs)
+
+        # Left padding makes the prompt length uniform, so the continuation for
+        # every row starts at the input width -- slice it off to keep only new
+        # tokens (never echo the prompt back into the loop).
+        new_tokens = out[:, enc["input_ids"].shape[1]:]
+        return self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
+
+    def _render(self, prompt: str) -> str:
+        """Wrap a role prompt as a single user turn if the model is chat-tuned.
+
+        The prover/verifier/corrector prompts are already complete instructions,
+        so one user message is the whole conversation. A base model with no chat
+        template is fed the prompt verbatim.
+        """
+        if getattr(self.tokenizer, "chat_template", None):
+            return self.tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        return prompt
+
+    def count_tokens(self, text: str) -> int:
+        if self.tokenizer is None:
+            return super().count_tokens(text)
+        return len(self.tokenizer.encode(text, add_special_tokens=False))
+
+    def teardown(self) -> None:
+        # Drop this client's references first, then release its hold on the
+        # shared copy. The weights are freed only once the last client using
+        # them tears down (refcount hits zero).
+        self.model = None
+        self.tokenizer = None
+        if not self._cached:
+            return
+        self._cached = False
+        freed = False
+        with HFClient._lock:
+            entry = HFClient._cache.get(self.spec.model)
+            if entry is not None:
+                entry.refcount -= 1
+                if entry.refcount <= 0:
+                    del HFClient._cache[self.spec.model]
+                    freed = True
+        if freed:
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
 
 
 #: client name -> class. Mirrors oracle/budget's ESTIMATORS registry idiom.
@@ -169,9 +357,4 @@ _OPENAI_SPEC = (
     "agent model client 'openai' is not implemented yet.\n"
     "  - Use client: mock to run the loop on CPU.\n"
     "  - To implement: see the docstring of frugalprover.agent.model.OpenAIClient."
-)
-_HF_SPEC = (
-    "agent model client 'hf' is not implemented yet.\n"
-    "  - Use client: mock to run the loop on CPU.\n"
-    "  - To implement: see the docstring of frugalprover.agent.model.HFClient."
 )

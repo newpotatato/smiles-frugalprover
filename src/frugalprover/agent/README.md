@@ -10,10 +10,11 @@ it and are selected with `build_agent(cfg.agent)`.
 
 ## What's here
 
-- `model.py` — `ModelClient` ABC and a scriptable `MockModelClient` that runs the
-  loop on CPU with no models or network. The `openai` (vLLM-served,
-  OpenAI-compatible) and `hf` (local `transformers.generate`) backends are
-  registered but raise `NotImplementedError` with a spec until implemented.
+- `model.py` — `ModelClient` ABC, a scriptable `MockModelClient` that runs the
+  loop on CPU with no models or network, and `HFClient` (local
+  `transformers.generate`; same-model roles share one loaded copy). The `openai`
+  (vLLM-served, OpenAI-compatible) backend is registered but raises
+  `NotImplementedError` with a spec until implemented.
 - `roles.py` — `Prover`, `Verifier`, `Corrector`, and `Critique` (verdict +
   specific diagnosed flaws — the feedback contract handed to the corrector).
 - `aggregation.py` — how the k verdicts combine: `unanimity` vs `majority`.
@@ -48,11 +49,14 @@ big call per step instead of one prompt at a time.
 ## How it plugs in
 
 `oracle/budget/sweep.py` constructs a `SolverAgent` in `setup()` and calls
-`solve_batch(problems, max_new_tokens=B, n_samples=n)` once per budget. The
-agent returns raw completions; Stage 2 grades them with
-`frugalprover.common.grading.grade` and derives `B*`. Stage 2 is the only thing
-that calls an agent, and it calls it through `SolverAgent` — so swapping solvers
-never touches the labeling loop.
+`solve_batch(problems, max_new_tokens=B, n_samples=n)` once per budget. Each
+returned `Sample` carries the completion text and the tokens it cost; Stage 2
+grades the text with `frugalprover.common.grading.grade`, derives `B*`, and sums
+the tokens for `tokens_spent`. Everything the stage needs rides back on the
+protocol return — it never reaches into agent internals like `last_traces`
+(that field is a `prove`-CLI convenience, not part of the contract). Stage 2 is
+the only thing that calls an agent, and it calls it through `SolverAgent` — so
+swapping solvers never touches the labeling loop.
 
 Nothing in `oracle/` imports from `agent/`, and nothing in `agent/` imports from
 `oracle/` — the dependency runs one way.
