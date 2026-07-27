@@ -1,0 +1,56 @@
+# Local-transformers agent: runs an open model through the `hf` client
+# (agent/model.py:HFClient) -- no server, no inference-time network. Needs the
+# GPU extra (pip install -e ".[gpu]"); falls back to CPU if no CUDA is present.
+#
+# Layer it over a base to solve problems:
+#
+#   frugalprover prove -c configs/base.yaml -c configs/agent/DeepSeek_R1_Distill_Qwen_7B.yaml \
+#       --problems <file.jsonl>
+#
+# Runs the full verify-repair loop on DeepSeek-R1-Distill-Qwen-7B. Each role
+# builds its own client and loads its own copy of the weights (prover + corrector
+# + k verifiers), so this needs enough memory for several 7B copies -- shrink the
+# model, drop to k=1 verifier, or serve one model via the `openai`/vLLM backend
+# and share it across roles. `max_batch_size` bounds prompts per generate call:
+# lower it if the active set OOMs, raise it for throughput.
+#
+# R1-Distill is a reasoning model (long chain-of-thought before the answer), so
+# it wants a high max_tokens and the recommended temperature 0.6 / top_p 0.95.
+agent:
+  type: verify_repair
+  prover:
+    client: hf
+    model: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+    temperature: 0.6
+    top_p: 0.95
+    max_tokens: 8192
+    max_batch_size: 4
+  corrector:
+    client: hf
+    model: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+    temperature: 0.6
+    top_p: 0.95
+    max_tokens: 8192
+    max_batch_size: 4
+  verifiers:
+    - client: hf
+      model: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+      temperature: 0.6
+      top_p: 0.95
+      max_tokens: 4096
+      max_batch_size: 4
+  max_rounds: 4
+  aggregation: unanimity
+  independence: blind
+  on_nonconvergence: reject
+
+# Budget sweep sized for THIS agent, overriding the mock-scale defaults in
+# base.yaml. A single R1-Distill solve is already ~1-4k tokens of chain-of-thought
+# (prover max_tokens is 8192), and every verify+repair round adds a verifier
+# (<=4096) and a corrector (<=8192) call on top. Stage 2 clamps each role's
+# per-call cap to the budget B, so below one prover call B just truncates a single
+# attempt; the axis only becomes "how many critique-repair rounds can it afford"
+# once B clears the prover cap. Hence budgets >= 8192. Each budget is a full
+# re-run, so more entries = proportionally more GPU time.
+budget:
+  budgets: [8192, 16384, 32768]
