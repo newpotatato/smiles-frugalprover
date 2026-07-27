@@ -19,8 +19,11 @@ from typing import Any
 import numpy as np
 
 from frugalprover.common.config import ExtractConfig
+from frugalprover.common.logging import get_logger
 from frugalprover.common.records import ProblemRecord
 from frugalprover.oracle.states.pooling import geometry, pool, resolve_layer
+
+log = get_logger(__name__)
 
 
 class TransformerHiddenStateExtractor:
@@ -61,12 +64,12 @@ class TransformerHiddenStateExtractor:
         cfg = self.cfg
         device = cfg.device
         if device.startswith("cuda") and not torch.cuda.is_available():
-            print(f"warning: device={device!r} requested but CUDA is unavailable; using CPU")
+            log.warning("device=%r requested but CUDA is unavailable; using CPU", device)
             device = "cpu"
         # fp16 on CPU is slower than fp32 and unsupported for some ops
         dtype = getattr(torch, cfg.dtype)
         if device == "cpu" and dtype in (torch.float16, torch.bfloat16):
-            print(f"warning: {cfg.dtype} is not useful on CPU; using float32")
+            log.warning("%s is not useful on CPU; using float32", cfg.dtype)
             dtype = torch.float32
 
         self.device = device
@@ -84,9 +87,11 @@ class TransformerHiddenStateExtractor:
         self.hidden_size = getattr(config, "hidden_size", None) or getattr(config, "n_embd")
 
         self._resolve_columns()
-        print(f"loaded {cfg.model_name}: {n_layers} layers, hidden_size={self.hidden_size}, "
-              f"device={device}, dtype={str(dtype).replace('torch.', '')}")
-        print(f"  extracting {len(self._pooled)} pooled + {len(self._geometry)} geometry columns")
+        log.info("loaded %s: %d layers, hidden_size=%s, device=%s, dtype=%s",
+                 cfg.model_name, n_layers, self.hidden_size, device,
+                 str(dtype).replace("torch.", ""))
+        log.info("  extracting %d pooled + %d geometry columns",
+                 len(self._pooled), len(self._geometry))
 
     def _resolve_columns(self) -> None:
         """Turn config layer indices (possibly negative) into absolute ones,

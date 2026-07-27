@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from frugalprover.common.config import PipelineConfig
 from frugalprover.common.io import write_json
+from frugalprover.common.logging import get_logger
 from frugalprover.oracle.model.base import OracleModel
 from frugalprover.oracle.model.classification import ClassificationOracle
 from frugalprover.oracle.model.dataset import OracleDataset
@@ -15,6 +16,8 @@ from frugalprover.oracle.model.features import (
     build_blocks,
 )
 from frugalprover.oracle.model.regression import RegressionOracle
+
+log = get_logger(__name__)
 
 __all__ = [
     "OracleModel", "ClassificationOracle", "RegressionOracle", "OracleDataset",
@@ -85,9 +88,9 @@ def run_train(cfg: PipelineConfig) -> OracleModel:
         summary["model_comparison"] = comparison
     write_json(cfg.result_path(tc.metrics), summary)
 
-    print(f"\nsaved {model.mode} oracle -> {model_path}")
-    print(f"  layer={model.layer}  CV {model.cv_metric}={model.cv_score:.3f}  "
-          f"n_train_rows={model.n_train}")
+    log.info("saved %s oracle -> %s", model.mode, model_path)
+    log.info("  layer=%s  CV %s=%.3f  n_train_rows=%s",
+             model.layer, model.cv_metric, model.cv_score, model.n_train)
     return model
 
 

@@ -15,6 +15,10 @@ import warnings
 
 import numpy as np
 
+from frugalprover.common.logging import get_logger
+
+log = get_logger(__name__)
+
 ALPHAS = np.logspace(-3, 3, 13)
 
 
@@ -30,12 +34,12 @@ def compare(model, ds) -> dict[str, float]:
         else:
             results = _compare_regression(model, ds)
 
-    print(f"\n--- model families at {model.layer} (same CV splits) ---")
+    log.info("--- model families at %s (same CV splits) ---", model.layer)
     for name, score in sorted(results.items(), key=lambda kv: -kv[1]):
-        print(f"  {name:<20} CV {model.cv_metric} = {score:.3f}")
+        log.info("  %-20s CV %s = %.3f", name, model.cv_metric, score)
     best = max(results, key=results.get)
-    print(f"-> best: {best} ({results[best]:.3f}). At this n, prefer the simplest "
-          f"model within ~0.02 of the top, not the top number itself.")
+    log.info("-> best: %s (%.3f). At this n, prefer the simplest model within "
+             "~0.02 of the top, not the top number itself.", best, results[best])
     return {k: round(float(v), 4) for k, v in results.items()}
 
 

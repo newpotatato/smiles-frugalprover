@@ -12,7 +12,10 @@ from typing import Any, ClassVar
 
 import numpy as np
 
+from frugalprover.common.logging import get_logger
 from frugalprover.oracle.model.dataset import OracleDataset
+
+log = get_logger(__name__)
 
 
 class OracleModel(ABC):
@@ -86,9 +89,9 @@ class OracleModel(ABC):
             try:
                 scores[layer] = self.score(ds, layer)
             except ValueError as e:
-                print(f"  {layer}: skipped ({e})")
+                log.debug("  %s: skipped (%s)", layer, e)
                 continue
-            print(f"  {layer}: CV {self.cv_metric} = {scores[layer]:.3f}")
+            log.info("  %s: CV %s = %.3f", layer, self.cv_metric, scores[layer])
 
         usable = {k: v for k, v in scores.items() if not np.isnan(v)}
         if not usable:

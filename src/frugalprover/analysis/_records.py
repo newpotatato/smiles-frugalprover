@@ -18,7 +18,10 @@ from __future__ import annotations
 import re
 
 from frugalprover.common.grading import SURFACE_KEYS, surface_features
+from frugalprover.common.logging import get_logger
 from frugalprover.oracle.model.dataset import OracleDataset
+
+log = get_logger(__name__)
 
 _POOLED_RE = re.compile(r"^L(\d+)_")
 
@@ -54,7 +57,7 @@ def records_from_dataset(ds: OracleDataset, pooling: str | None = None) -> list[
             raise ValueError(
                 f"no pooled columns with pooling {family!r}. Available: {ds.pooled_columns()}"
             )
-        print(f"analysis: using pooling {family!r} across {len(columns)} layers")
+        log.info("using pooling %r across %d layers", family, len(columns))
         for col in columns:
             layer_idx = _POOLED_RE.match(col).group(1)
             vectors = ds.activations(col)

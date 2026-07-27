@@ -21,6 +21,9 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from frugalprover.common.config import ModelSpec
+from frugalprover.common.logging import get_logger
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -187,11 +190,9 @@ class HFClient(ModelClient):
             if entry is None:
                 entry = self._load(key)
                 HFClient._cache[key] = entry
-                print(
-                    f"loaded {key} for agent client 'hf': device={entry.device}"
-                )
+                log.info("loaded %s for agent client 'hf': device=%s", key, entry.device)
             else:
-                print(f"reusing cached {key} for agent client 'hf'")
+                log.info("reusing cached %s for agent client 'hf'", key)
             entry.refcount += 1
         self.model = entry.model
         self.tokenizer = entry.tokenizer

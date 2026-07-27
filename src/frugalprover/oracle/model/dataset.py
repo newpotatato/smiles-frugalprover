@@ -17,7 +17,10 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from frugalprover.common.io import read_jsonl, read_table
+from frugalprover.common.logging import get_logger
 from frugalprover.common.records import BudgetRecord, ProblemRecord
+
+log = get_logger(__name__)
 
 #: Pooled vector columns look like "L14_mean"; geometry scalars like
 #: "L14_l2_norm". Both start with L<digits>_, so they're told apart by dtype
@@ -78,7 +81,8 @@ class OracleDataset:
         aligned = [by_id[i] for i in sorted(keep)]
         if verbose:
             dropped = {k: v - len(aligned) for k, v in counts.items() if v != len(aligned)}
-            print(f"joined {len(aligned)} problems" + (f" (dropped: {dropped})" if dropped else ""))
+            log.info("joined %d problems%s", len(aligned),
+                     f" (dropped: {dropped})" if dropped else "")
 
         return cls(
             problems=aligned,
