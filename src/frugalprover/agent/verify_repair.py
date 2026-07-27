@@ -29,7 +29,10 @@ from frugalprover.agent.base import Sample
 from frugalprover.agent.model import ModelClient, build_model_client
 from frugalprover.agent.roles import Corrector, Critique, Prover, Verifier
 from frugalprover.common.config import AgentConfig, ModelSpec
+from frugalprover.common.logging import get_logger
 from frugalprover.common.records import ProblemRecord
+
+log = get_logger(__name__)
 
 #: A client factory: ModelSpec -> ModelClient. Swappable so tests can inject
 #: scripted mocks without a config round-trip.
@@ -106,6 +109,9 @@ class VerifyRepairAgent:
         ]
 
         # Prover: one batched call for the whole set.
+        log.info("proposing %d attempts (%d problems x %d samples), cap=%s, max_rounds=%d",
+                 len(attempts), len(problems), n_samples,
+                 cap if cap is not None else "none", self.cfg.max_rounds)
         for a, text in zip(attempts, self.prover.propose([a.problem for a in attempts])):
             a.candidate = text
             a.tokens += self.prover.count_tokens(text)
@@ -116,6 +122,7 @@ class VerifyRepairAgent:
                 break
 
             # Audit: each verifier runs once across all active attempts.
+            accepted_this_round = 0
             for a, crits in zip(active, self._audit_batch(active)):
                 a.rounds += 1
                 a.tokens += sum(
@@ -123,8 +130,11 @@ class VerifyRepairAgent:
                 )
                 if aggregate(crits, self.cfg.aggregation):
                     a.accepted = a.done = True
+                    accepted_this_round += 1
                 else:
                     a.flaws = collect_flaws(crits)
+            log.info("round %d/%d: audited %d active, %d newly accepted",
+                     round_i + 1, self.cfg.max_rounds, len(active), accepted_this_round)
 
             # Repair the survivors -- unless this was the last round, or they hit
             # the cap during the audit, in which case they're finalized instead.

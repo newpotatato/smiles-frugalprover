@@ -163,6 +163,7 @@ def cmd_prove(args: argparse.Namespace) -> int:
     from frugalprover.common.records import ProblemRecord
 
     cfg = _resolve(args)
+    _add_run_log(cfg, args)
     problems = [ProblemRecord.from_dict(d) for d in read_jsonl(args.problems)]
     if args.max_problems:
         problems = problems[: args.max_problems]
@@ -191,7 +192,7 @@ def cmd_prove(args: argparse.Namespace) -> int:
     out = cfg.data_path(args.out)
     write_jsonl(out, rows, meta={"artifact": "prove", "config": cfg.to_dict()["agent"]})
     accepted = sum(1 for r in rows if r["accepted"])
-    print(f"proved {len(rows)} problems ({accepted} accepted) -> {out}")
+    log.info("proved %d problems (%d accepted) -> %s", len(rows), accepted, out)
     return 0
 
 
