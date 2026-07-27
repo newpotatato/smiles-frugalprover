@@ -27,6 +27,7 @@ dependencies = [
     "pandas",
     "pyarrow",
     "pyyaml",
+    "rich",
 ]
 
 [project.optional-dependencies]

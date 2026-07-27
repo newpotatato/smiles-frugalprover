@@ -14,10 +14,13 @@ from frugalprover.common.io import (
     sort_jsonl_by_id,
     write_meta,
 )
+from frugalprover.common.logging import get_logger, track
 from frugalprover.common.records import BudgetRecord, ProblemRecord
 from frugalprover.oracle.budget.base import BudgetEstimator
 from frugalprover.oracle.budget.mock import MockEstimator
 from frugalprover.oracle.budget.sweep import TokenSweepEstimator
+
+log = get_logger(__name__)
 
 __all__ = [
     "BudgetEstimator", "MockEstimator", "TokenSweepEstimator",
@@ -67,22 +70,22 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
     done = existing_ids(out)
     todo = [p for p in problems if p.id not in done]
     if done:
-        print(f"resuming: {len(done)} already labeled, {len(todo)} to go")
+        log.info("resuming: %d already labeled, %d to go", len(done), len(todo))
     if not todo:
-        print(f"nothing to do - all {len(problems)} problems already in {out}")
+        log.info("nothing to do - all %d problems already in %s", len(problems), out)
         return [BudgetRecord.from_dict(d) for d in read_jsonl(out)]
 
     estimator = build_estimator(bc)
-    print(f"labeling {len(todo)} problems with estimator={bc.estimator!r} "
-          f"agent={bc.agent!r} budgets={bc.budgets} n_samples={bc.n_samples}")
+    log.info("labeling %d problems with estimator=%r agent=%r budgets=%s n_samples=%s",
+             len(todo), bc.estimator, bc.agent, bc.budgets, bc.n_samples)
 
     estimator.setup()
     try:
-        for i in range(0, len(todo), bc.batch_size):
+        starts = range(0, len(todo), bc.batch_size)
+        for i in track(starts, description="labeling", total=len(starts)):
             batch = todo[i : i + bc.batch_size]
             for record in estimator.estimate_batch(batch):
                 append_jsonl(out, record.to_dict())
-            print(f"  {min(i + len(batch), len(todo))}/{len(todo)}", end="\r", flush=True)
     finally:
         estimator.teardown()
 
@@ -97,11 +100,12 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
         **stats,
     })
 
-    print(f"\nwrote {len(records)} budget labels -> {out}")
-    print(f"  solved: {stats['n_solved']}/{len(records)}  censored: {stats['n_censored']}")
-    print(f"  b_star distribution: {stats['b_star_distribution']}")
+    log.info("wrote %d budget labels -> %s", len(records), out)
+    log.info("  solved: %d/%d  censored: %d",
+             stats["n_solved"], len(records), stats["n_censored"])
+    log.info("  b_star distribution: %s", stats["b_star_distribution"])
     if stats["single_pass"]:
-        print("  single-budget run: usable for classification, not for regression")
+        log.info("  single-budget run: usable for classification, not for regression")
     return records
 
 

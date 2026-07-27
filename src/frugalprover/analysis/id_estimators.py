@@ -8,6 +8,10 @@ proposal cites it (see references/DIMENSIONALITY_METHODS.md) instead of PCA.
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
+from frugalprover.common.logging import get_logger
+
+log = get_logger(__name__)
+
 
 def twonn_dimension(X: np.ndarray, discard_fraction: float = 0.1) -> float:
     """Estimate the intrinsic dimension of the point cloud X (n_samples, n_features).
@@ -80,7 +84,8 @@ def _sanity_check():
         X = Z @ A  # linear embedding preserves ID exactly
         est_twonn = twonn_dimension(X)
         est_mle = mle_dimension(X)
-        print(f"true_d={true_d:>2} (embedded in D={D:>4}) -> TwoNN = {est_twonn:.2f}  MLE = {est_mle:.2f}")
+        log.info("true_d=%2d (embedded in D=%4d) -> TwoNN = %.2f  MLE = %.2f",
+                 true_d, D, est_twonn, est_mle)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,9 @@ from frugalprover.analysis._legacy_features import (
     pick_best_layer_classification,
 )
 from frugalprover.analysis._records import add_paths_arg, load_records
+from frugalprover.common.logging import get_logger
+
+log = get_logger(__name__)
 
 N_REPEATS = 30
 VAL_FRACTION = 0.25
@@ -65,11 +68,11 @@ def main():
 
     all_records = load_records(args.problems, args.hidden_states, args.budgets, args.pooling)
     records = [r for r in all_records if "p_by_budget" in r]
-    print(f"loaded {len(all_records)} records; {len(records)} have full_sweep "
+    log.info(f"loaded {len(all_records)} records; {len(records)} have full_sweep "
           f"budget data (this script simulates accrual of LABELED outcomes, so only that "
           f"tier is usable -- activations_only/baseline_single records are skipped here)")
     if len(records) < 20:
-        print("too few labeled problems for a meaningful accrual curve -- run `frugalprover budget`"
+        log.info("too few labeled problems for a meaningful accrual curve -- run `frugalprover budget`"
               "'full_sweep' on more of the labeling subset first.")
         return
 
@@ -78,15 +81,15 @@ def main():
     rng.shuffle(shuffled)
     n_val = max(10, int(len(shuffled) * VAL_FRACTION))
     val, pool = shuffled[:n_val], shuffled[n_val:]
-    print(f"held-out validation set: {n_val} problems (fixed, never trained on)")
-    print(f"accrual pool: {len(pool)} problems")
+    log.info(f"held-out validation set: {n_val} problems (fixed, never trained on)")
+    log.info(f"accrual pool: {len(pool)} problems")
 
     type_names = sorted(set(r["type"] for r in records))
     budgets_all = sorted(set(int(b) for r in records for b in r["p_by_budget"].keys()))
-    print("\npicking a fixed layer once on the full pool (kept fixed across all checkpoint sizes "
+    log.info("\npicking a fixed layer once on the full pool (kept fixed across all checkpoint sizes "
           "-- this curve is about data quantity, not re-tuning the layer each time):")
     best_layer, _ = pick_best_layer_classification(pool, type_names, budgets_all)
-    print(f"-> using {best_layer}\n")
+    log.info(f"-> using {best_layer}\n")
 
     sizes = sorted(set(max(10, int(len(pool) * f)) for f in CHECKPOINT_FRACTIONS))
     curve = {k: [] for k in sizes}
@@ -97,14 +100,14 @@ def main():
             if not np.isnan(auc):
                 curve[k].append(auc)
 
-    print("accrued training size -> held-out AUC (mean +/- std over repeats):")
+    log.info("accrued training size -> held-out AUC (mean +/- std over repeats):")
     means, stds = [], []
     for k in sizes:
         vals = curve[k]
         m, s = (float(np.mean(vals)), float(np.std(vals))) if vals else (float("nan"), float("nan"))
         means.append(m)
         stds.append(s)
-        print(f"  n={k:>3}: AUC = {m:.3f} +/- {s:.3f}  ({len(vals)} valid repeats)")
+        log.info(f"  n={k:>3}: AUC = {m:.3f} +/- {s:.3f}  ({len(vals)} valid repeats)")
 
     plt.figure(figsize=(5.5, 4))
     plt.errorbar(sizes, means, yerr=stds, marker="o", capsize=3)
@@ -115,14 +118,14 @@ def main():
     plt.legend()
     plt.tight_layout()
     plt.savefig(out_dir / "online_learning_curve.png", dpi=150)
-    print("\nsaved online_learning_curve.png")
+    log.info("\nsaved online_learning_curve.png")
 
     valid = [(m, s) for m, s in zip(means, stds) if not np.isnan(m)]
     if valid and valid[-1][0] > valid[0][0] + 0.03:
-        print("-> AUC trends up with more accrued data: supports keeping the oracle "
+        log.info("-> AUC trends up with more accrued data: supports keeping the oracle "
               "updated online rather than freezing it after the calibration batch.")
     else:
-        print("-> no clear improvement from more accrued data at this n -- an honest "
+        log.info("-> no clear improvement from more accrued data at this n -- an honest "
               "finding: either the signal saturates early, or n is too small to see the "
               "online-update benefit yet. Worth presenting as-is rather than assuming "
               "online updating helps just because the abstract asserts it.")

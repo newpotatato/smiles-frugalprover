@@ -35,6 +35,9 @@ from sklearn.model_selection import LeaveOneOut, cross_val_predict
 
 from frugalprover.analysis._records import add_paths_arg, load_records
 from frugalprover.analysis._legacy_features import ALPHAS, build_features
+from frugalprover.common.logging import get_logger
+
+log = get_logger(__name__)
 
 
 def _n_samples(args, default: int = 1) -> int:
@@ -54,10 +57,10 @@ def _n_samples(args, default: int = 1) -> int:
     if len(values) == 1:
         return int(values.pop())
     if len(values) > 1:
-        print(f"warning: budget records disagree on n_samples ({sorted(values)}); "
+        log.warning(f"budget records disagree on n_samples ({sorted(values)}); "
               f"using the largest, so the cost below is an upper bound")
         return max(values)
-    print(f"warning: no n_samples in the budget records; assuming {default}")
+    log.warning(f"no n_samples in the budget records; assuming {default}")
     return default
 
 
@@ -66,17 +69,17 @@ def main():
     add_paths_arg(ap)
     args = ap.parse_args()
     records = load_records(args.problems, args.hidden_states, args.budgets, args.pooling)
-    print(f"loaded {len(records)} records")
+    log.info(f"loaded {len(records)} records")
 
     swept = [r for r in records if "p_by_budget" in r]
-    print(f"{len(swept)}/{len(records)} records have budget labels "
+    log.info(f"{len(swept)}/{len(records)} records have budget labels "
           f"(calibration cost is only paid on these)")
     if not swept:
-        print("no budget labels found -- run `frugalprover budget` first.")
+        log.info("no budget labels found -- run `frugalprover budget` first.")
         return
 
     budgets = sorted(int(b) for b in swept[0]["p_by_budget"].keys())
-    print(f"budgets swept per problem: {budgets}")
+    log.info(f"budgets swept per problem: {budgets}")
 
     # --- 1. calibration cost: exact, deterministic, paid only on `swept` ---
     #
@@ -87,9 +90,9 @@ def main():
     tokens_per_problem_per_sample = sum(budgets)
     calibration_cost_per_problem = tokens_per_problem_per_sample * n_samples
     total_calibration_cost = calibration_cost_per_problem * len(swept)
-    print(f"\ntokens per (problem, sample): sum({budgets}) = {tokens_per_problem_per_sample}")
-    print(f"n_samples per (problem, budget): {n_samples}")
-    print(f"total calibration cost: {total_calibration_cost:,} tokens "
+    log.info(f"\ntokens per (problem, sample): sum({budgets}) = {tokens_per_problem_per_sample}")
+    log.info(f"n_samples per (problem, budget): {n_samples}")
+    log.info(f"total calibration cost: {total_calibration_cost:,} tokens "
           f"across {len(swept)} labeled problems "
           f"({calibration_cost_per_problem:,} per problem)")
 
@@ -98,7 +101,7 @@ def main():
     solved = [r for r in swept if r.get("b_star") is not None]
     n = len(solved)
     if n < 15:
-        print("\ntoo few solved problems to fit an oracle for the cost projection -- "
+        log.info("\ntoo few solved problems to fit an oracle for the cost projection -- "
               "report the calibration cost alone on the slide.")
         return
 
@@ -123,7 +126,7 @@ def main():
     oracle_guided_cost_labeled += n_censored * max(budgets)  # charge worst case observed
 
     ratio_same_n = total_calibration_cost / oracle_guided_cost_labeled if oracle_guided_cost_labeled > 0 else float("nan")
-    print(f"\noracle-guided cost on the SAME {len(swept)} labeled problems "
+    log.info(f"\noracle-guided cost on the SAME {len(swept)} labeled problems "
           f"(out-of-sample B_hat, layer={best_layer}, CV R^2={best_r2:.3f}): "
           f"{oracle_guided_cost_labeled:.0f} tokens ({ratio_same_n:.1f}x less than calibration, "
           f"1 attempt each)")
@@ -139,18 +142,18 @@ def main():
         X_unlabeled, _, _ = build_features(unlabeled, type_names, best_layer, scaler=scaler, pca=pca, fit=False)
         preds_unlabeled = np.clip(final_model.predict(X_unlabeled), min(budgets), max(budgets))
         oracle_guided_cost_pool = oracle_guided_cost_labeled + preds_unlabeled.sum()
-        print(f"\nAMORTIZATION: applying that same oracle to the {len(unlabeled)} OTHER problems "
+        log.info(f"\nAMORTIZATION: applying that same oracle to the {len(unlabeled)} OTHER problems "
               f"in the pool (never swept, activations already free) projects "
               f"~{preds_unlabeled.sum():.0f} more tokens to solve them once -- "
               f"total oracle-guided cost across all {len(records)} pool problems: "
               f"~{oracle_guided_cost_pool:.0f} tokens, against a FIXED calibration bill of "
               f"{total_calibration_cost} tokens paid only once on the {len(swept)} labeled problems.")
     else:
-        print("\nno unlabeled pool problems found (large pool == labeled tier here) -- "
+        log.info("\nno unlabeled pool problems found (large pool == labeled tier here) -- "
               "amortization projection needs a bigger activations_only pool than the "
               "labeling subset -- point extract.problems at a bigger file than budget.problems.")
 
-    print("\nCAVEAT: even a zero-signal oracle looks 'cheaper' than the full sweep here, "
+    log.info("\nCAVEAT: even a zero-signal oracle looks 'cheaper' than the full sweep here, "
           "purely because guessing once is mechanically cheaper than testing every budget "
           "level -- don't present the ratio alone as evidence the oracle is smart. Compare "
           "against a naive 'always predict the median B*' baseline to isolate the actual "

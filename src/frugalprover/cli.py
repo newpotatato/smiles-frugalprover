@@ -8,10 +8,13 @@ lazily inside each handler, so `frugalprover sample` doesn't drag in torch and
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 from frugalprover.common.config import PipelineConfig, load_config
+from frugalprover.common.logging import configure as configure_logging
+from frugalprover.common.logging import console, get_logger
+
+log = get_logger(__name__)
 
 #: Pipeline order. `run-all --from/--to` slices this list.
 STAGES = ["sample", "budget", "extract", "train", "report"]
@@ -66,8 +69,20 @@ def _run_stage(cfg: PipelineConfig, stage: str) -> None:
         raise ValueError(f"unknown stage {stage!r}")
 
 
+def _add_run_log(cfg: PipelineConfig, args: argparse.Namespace) -> None:
+    """Tee logs into a per-run `run.log` alongside the run's other artifacts.
+
+    Re-runs `configure` with the console settings already parsed plus a file
+    sink; the file stays at full DEBUG regardless of the console level, so a run
+    log is a complete record even under `-q`.
+    """
+    log_file = args.log_file or (cfg.run_results_dir / "run.log")
+    configure_logging(_log_level(args), log_file=log_file, quiet=args.quiet)
+
+
 def cmd_stage(args: argparse.Namespace) -> int:
     cfg = _resolve(args)
+    _add_run_log(cfg, args)
     _run_stage(cfg, args.command)
     return 0
 
@@ -102,6 +117,7 @@ def _norm(v):
 
 def cmd_run_all(args: argparse.Namespace) -> int:
     cfg = _resolve(args)
+    _add_run_log(cfg, args)
     start = STAGES.index(args.start) if args.start else 0
     stop = STAGES.index(args.stop) + 1 if args.stop else len(STAGES)
 
@@ -111,17 +127,18 @@ def cmd_run_all(args: argparse.Namespace) -> int:
         if args.skip_existing and out.exists() and not upstream_ran:
             changed = _is_stale(cfg, stage, out)
             if changed:
-                print(f"[{stage}] config changed since {out.name} was written "
-                      f"({', '.join(changed)}) -- rerunning rather than skipping")
+                log.warning("[%s] config changed since %s was written (%s) -- "
+                            "rerunning rather than skipping",
+                            stage, out.name, ", ".join(changed))
             else:
-                print(f"[{stage}] skipped - {out} already exists")
+                log.info("[%s] skipped - %s already exists", stage, out)
                 continue
         elif args.skip_existing and out.exists() and upstream_ran:
             # its inputs were just regenerated, so the existing output is stale
             # by definition -- skipping here is what silently mixes a new
             # dataset with an old model
-            print(f"[{stage}] rerunning - an upstream stage was re-run")
-        print(f"\n=== {stage} ===")
+            log.info("[%s] rerunning - an upstream stage was re-run", stage)
+        log.info("=== %s ===", stage)
         _run_stage(cfg, stage)
         upstream_ran = True
     return 0
@@ -135,7 +152,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
     ds = OracleDataset.load(problems=args.problems, hidden_states=args.hidden)
     rows = model.predict_rows(ds)
     write_jsonl(args.out, rows, meta={"artifact": "predictions", "model": str(args.model)})
-    print(f"wrote {len(rows)} predictions -> {args.out}")
+    log.info("wrote %d predictions -> %s", len(rows), args.out)
     return 0
 
 
@@ -151,22 +168,22 @@ def cmd_info(args: argparse.Namespace) -> int:
     import importlib
     import platform
 
-    print(f"python       {platform.python_version()} ({platform.system()})")
+    console.print(f"python       {platform.python_version()} ({platform.system()})")
     for mod in ["frugalprover", "numpy", "sklearn", "pandas", "pyarrow", "yaml",
                 "datasets", "torch", "transformers"]:
         try:
             m = importlib.import_module(mod)
-            print(f"{mod:<12} {getattr(m, '__version__', '?')}")
+            console.print(f"{mod:<12} {getattr(m, '__version__', '?')}")
         except ImportError:
             note = "  (optional: pip install 'frugalprover[gpu]')" if mod in ("torch", "transformers") else ""
-            print(f"{mod:<12} not installed{note}")
+            console.print(f"{mod:<12} not installed{note}")
 
     try:
         import torch
 
-        print(f"\ncuda available: {torch.cuda.is_available()}")
+        console.print(f"\ncuda available: {torch.cuda.is_available()}")
     except ImportError:
-        print("\ncuda available: unknown (torch not installed)")
+        console.print("\ncuda available: unknown (torch not installed)")
     return 0
 
 
@@ -188,6 +205,15 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--run-name", help="override run_name")
         p.add_argument("--data-dir", help="override data_dir")
         p.add_argument("--results-dir", help="override results_dir")
+        p.add_argument("--log-level", default="INFO",
+                       choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+                       help="console log verbosity (default: INFO)")
+        p.add_argument("-v", "--verbose", action="store_true",
+                       help="shorthand for --log-level DEBUG")
+        p.add_argument("-q", "--quiet", action="store_true",
+                       help="only warnings and errors on the console (file log stays full)")
+        p.add_argument("--log-file", metavar="FILE",
+                       help="also write logs here (default: <run>/run.log for pipeline stages)")
 
     descriptions = {
         "sample": "Stage 1: draw a balanced MATH sample -> problems.jsonl",
@@ -228,16 +254,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _log_level(args: argparse.Namespace) -> str:
+    return "DEBUG" if getattr(args, "verbose", False) else args.log_level
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    # Console-only to start; pipeline handlers add a per-run file sink once the
+    # config (and thus the run dir) is resolved.
+    configure_logging(_log_level(args), quiet=args.quiet)
     try:
         return args.func(args)
     except NotImplementedError as e:
         # Stage 2's expected path until someone implements the sweep.
-        print(f"\nnot implemented: {e}", file=sys.stderr)
+        log.error("not implemented: %s", e)
         return 2
     except (ValueError, FileNotFoundError) as e:
-        print(f"\nerror: {e}", file=sys.stderr)
+        log.error("%s", e)
         return 1
 
 
