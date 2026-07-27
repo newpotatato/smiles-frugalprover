@@ -17,7 +17,10 @@ import numpy as np
 
 from frugalprover.common.config import PipelineConfig
 from frugalprover.common.io import read_json, write_json, write_jsonl
+from frugalprover.common.logging import get_logger
 from frugalprover.oracle.model.dataset import OracleDataset
+
+log = get_logger(__name__)
 
 
 def run_report(cfg: PipelineConfig) -> Path:
@@ -61,9 +64,9 @@ def run_report(cfg: PipelineConfig) -> Path:
 
     _write_readme(out_dir, cfg, model, metrics)
 
-    print(f"\nresults -> {out_dir}")
-    print(f"  metrics.json, predictions.jsonl ({len(predictions)} rows), config.yaml"
-          + (", plots/" if cfg.report.plots else ""))
+    log.info("results -> %s", out_dir)
+    log.info("  metrics.json, predictions.jsonl (%d rows), config.yaml%s",
+             len(predictions), ", plots/" if cfg.report.plots else "")
     return out_dir
 
 
@@ -80,7 +83,7 @@ def _plots(model, ds: OracleDataset, plot_dir: Path) -> None:
     _plot_layer_sweep(model, plot_dir / "layer_sweep.png", plt)
     _plot_calibration(model, ds, plot_dir / "calibration.png", plt)
     _plot_budget_hist(ds, plot_dir / "budget_hist.png", plt)
-    print(f"  wrote 3 plots -> {plot_dir}")
+    log.info("  wrote 3 plots -> %s", plot_dir)
 
 
 def _layer_index(name: str) -> int:

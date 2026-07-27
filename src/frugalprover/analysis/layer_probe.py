@@ -59,6 +59,9 @@ from sklearn.preprocessing import StandardScaler
 
 from frugalprover.analysis._records import add_paths_arg, load_records
 from frugalprover.analysis.id_estimators import twonn_dimension
+from frugalprover.common.logging import get_logger
+
+log = get_logger(__name__)
 
 PHI_KEYS = ["char_len", "word_len", "latex_cmd_count", "dollar_count",
             "brace_depth", "digit_count", "eq_count"]
@@ -140,23 +143,23 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     records = load_records(args.problems, args.hidden_states, args.budgets, args.pooling)
-    print(f"loaded {len(records)} records")
+    log.info(f"loaded {len(records)} records")
 
     # Stage 3 usually covers more problems than Stage 2, because
     # extraction is cheap and budget labeling is not. Problems without budget
     # labels have no p_by_budget key at all -- expected, not an error.
     swept = [r for r in records if "p_by_budget" in r]
-    print(f"{len(swept)}/{len(records)} records have budget labels "
+    log.info(f"{len(swept)}/{len(records)} records have budget labels "
           f"(the rest are activations_only/baseline_single -- used for the "
           f"layer/ID analysis below, but not for the B*/accuracy@budget sections)")
     if not swept:
-        print("no full_sweep records found -- nothing more to do (run `frugalprover budget`"
+        log.info("no full_sweep records found -- nothing more to do (run `frugalprover budget`"
               "on the labeling subset first).")
         return
 
     # --- Track B, free of charge: single-sample vs self-consistency accuracy@budget,
     # aggregated over the labeled problems only (defined regardless of censoring) ---
-    print("\n--- Track B baseline: accuracy@budget, single sample vs self-consistency ---")
+    log.info("\n--- Track B baseline: accuracy@budget, single sample vs self-consistency ---")
     budgets = sorted(int(b) for b in swept[0]["p_by_budget"].keys())
     # self-consistency is optional in the A2 schema -- an estimator that only
     # records p() leaves it out, so plot the single-sample curve alone rather
@@ -169,9 +172,9 @@ def main():
         if has_sc:
             sc_acc[b] = np.mean([r["sc_by_budget"][str(b)] for r in swept])
             line += f"  self-consistency acc={sc_acc[b]:.3f}"
-        print(line)
+        log.info(line)
     if not has_sc:
-        print("(no self-consistency data in these budget labels -- plotting single-sample only)")
+        log.info("(no self-consistency data in these budget labels -- plotting single-sample only)")
 
     plt.figure(figsize=(5, 4))
     plt.plot(budgets, [single_acc[b] for b in budgets], "o-", label="single sample")
@@ -183,18 +186,18 @@ def main():
     plt.legend()
     plt.tight_layout()
     plt.savefig(out_dir / "accuracy_vs_budget.png", dpi=150)
-    print("saved accuracy_vs_budget.png\n")
+    log.info("saved accuracy_vs_budget.png\n")
 
     # censoring is only meaningful among LABELED problems -- one that
     # was never swept at all (activations_only/baseline_single) isn't "censored",
     # it just wasn't tested, so the denominator here is `swept`, not `records`.
     solved = [r for r in swept if r.get("b_star") is not None]
     censored_frac = 1 - len(solved) / len(swept) if swept else float("nan")
-    print(f"{len(solved)}/{len(swept)} swept problems solved within tested budgets "
+    log.info(f"{len(solved)}/{len(swept)} swept problems solved within tested budgets "
           f"({censored_frac:.0%} censored)")
     n = len(solved)
     if n < 15:
-        print("WARNING: too few solved problems for a meaningful regression. "
+        log.warning("too few solved problems for a meaningful regression. "
               "Report the censoring rate itself as a finding, or widen BUDGETS "
               "/ lower SUCCESS_THRESHOLD in the notebook and re-run.")
         return
@@ -207,15 +210,15 @@ def main():
     phi_numeric = StandardScaler().fit_transform(phi_numeric)
     type_oh, type_names = type_one_hot(solved)
     phi = np.hstack([phi_numeric, type_oh])
-    print(f"phi(x): {PHI_KEYS} + type one-hot {type_names} -> {phi.shape[1]} dims")
+    log.info(f"phi(x): {PHI_KEYS} + type one-hot {type_names} -> {phi.shape[1]} dims")
 
     r2_phi = cv_r2(phi, y, cv)
-    print(f"\nB0: phi only                       CV R^2 = {r2_phi:.3f}")
+    log.info(f"\nB0: phi only                       CV R^2 = {r2_phi:.3f}")
 
     # --- stronger baseline: phi + TF-IDF bag-of-words on the problem text ---
     texts = [r.get("problem", "") for r in solved]
     if all(t == "" for t in texts):
-        print("NOTE: records have no 'problem' text (older notebook run) -- "
+        log.info("NOTE: records have no 'problem' text (older notebook run) -- "
               "skipping the TF-IDF baseline. Re-run the notebook to get it.")
         baseline = phi
         r2_baseline = r2_phi
@@ -227,17 +230,17 @@ def main():
         baseline = np.hstack([phi, tfidf_pcs])
         r2_baseline = cv_r2(baseline, y, cv)
         baseline_label = "phi + TF-IDF"
-        print(f"B1: phi + TF-IDF ({n_pcs_tfidf} PCs)   CV R^2 = {r2_baseline:.3f}")
+        log.info(f"B1: phi + TF-IDF ({n_pcs_tfidf} PCs)   CV R^2 = {r2_baseline:.3f}")
 
     # --- ID-vs-layer profile (Ansuini-style), computed over ALL records ---
     layer_names = sorted(solved[0]["activations"].keys(), key=lambda s: int(s.split("_")[1]))
-    print("\n--- Intrinsic dimension vs layer (TwoNN) ---")
+    log.info("\n--- Intrinsic dimension vs layer (TwoNN) ---")
     ids_by_layer = []
     for layer in layer_names:
         X_layer = np.array([r["activations"][layer] for r in records])
         d = twonn_dimension(X_layer)
         ids_by_layer.append(d)
-        print(f"{layer}: ID = {d:.2f}  (ambient dim = {X_layer.shape[1]})")
+        log.info(f"{layer}: ID = {d:.2f}  (ambient dim = {X_layer.shape[1]})")
 
     plt.figure(figsize=(5, 4))
     plt.plot([int(l.split("_")[1]) for l in layer_names], ids_by_layer, "o-")
@@ -246,12 +249,12 @@ def main():
     plt.title("ID of problem-statement activations vs. layer")
     plt.tight_layout()
     plt.savefig(out_dir / "id_vs_layer.png", dpi=150)
-    print("saved id_vs_layer.png")
+    log.info("saved id_vs_layer.png")
 
     # --- STEP 1: cheap full-depth sweep -- plain CV R^2 for every layer, no
     # bootstrap/permutation yet. This is the actual "which layer" empirics:
     # an Ansuini-style curve over the WHOLE depth, not 3 pre-picked points. ---
-    print(f"\n--- Layer-depth sweep: CV R^2 on top of [{baseline_label}], all {len(layer_names)} layers ---")
+    log.info(f"\n--- Layer-depth sweep: CV R^2 on top of [{baseline_label}], all {len(layer_names)} layers ---")
     layer_pcs = {}
     r2_by_layer = {}
     for layer in layer_names:
@@ -260,7 +263,7 @@ def main():
         pcs = PCA(n_components=n_pcs).fit_transform(acts)
         layer_pcs[layer] = pcs
         r2_by_layer[layer] = cv_r2(np.hstack([baseline, pcs]), y, cv)
-        print(f"  {layer}: CV R^2 = {r2_by_layer[layer]:.3f}")
+        log.info(f"  {layer}: CV R^2 = {r2_by_layer[layer]:.3f}")
 
     layer_idx_sorted = [int(l.split("_")[1]) for l in layer_names]
     plt.figure(figsize=(6, 4))
@@ -272,7 +275,7 @@ def main():
     plt.legend()
     plt.tight_layout()
     plt.savefig(out_dir / "r2_vs_layer_sweep.png", dpi=150)
-    print("saved r2_vs_layer_sweep.png")
+    log.info("saved r2_vs_layer_sweep.png")
 
     # --- STEP 2: expensive diagnostics on just TWO layers, to keep multiple
     # comparisons honest --
@@ -283,8 +286,8 @@ def main():
     confirmatory_layer = layer_names[-1]
     exploratory_layer = max(layer_names, key=lambda l: r2_by_layer[l])
     bonferroni_alpha = 0.05 / len(layer_names)
-    print(f"\nconfirmatory layer (a priori, last hidden state): {confirmatory_layer}")
-    print(f"exploratory layer (argmax of {len(layer_names)} layers): {exploratory_layer}  "
+    log.info(f"\nconfirmatory layer (a priori, last hidden state): {confirmatory_layer}")
+    log.info(f"exploratory layer (argmax of {len(layer_names)} layers): {exploratory_layer}  "
           f"-> Bonferroni-adjusted alpha = {bonferroni_alpha:.4f} (not 0.05)")
 
     diagnostics = {}
@@ -308,7 +311,7 @@ def main():
 
         alpha = bonferroni_alpha if tag == "exploratory" else 0.05
         sig = "***" if (ci_lo > 0 and p_value < alpha) else ("(overlaps 0)" if ci_lo < 0 < ci_hi else "")
-        print(f"\n[{tag}] {layer}: CV R^2={r2_aug:.3f}  delta={observed_delta:+.3f} "
+        log.info(f"\n[{tag}] {layer}: CV R^2={r2_aug:.3f}  delta={observed_delta:+.3f} "
               f"95% CI=[{ci_lo:+.3f}, {ci_hi:+.3f}] {sig}  perm p={p_value:.3f} "
               f"(alpha used: {alpha:.4f})  "
               f"partial corr (Pearson)={r_p:+.3f} (p={p_p:.3f}), (Spearman)={r_s:+.3f} (p={p_s:.3f})")
@@ -322,27 +325,27 @@ def main():
     plt.title("Confirmatory (a priori) vs exploratory (best-of-N) layer pick")
     plt.tight_layout()
     plt.savefig(out_dir / "baseline_vs_activations_r2.png", dpi=150)
-    print("\nsaved baseline_vs_activations_r2.png")
+    log.info("\nsaved baseline_vs_activations_r2.png")
 
     conf = diagnostics["confirmatory"]
-    print(f"\nSUMMARY: baseline ({baseline_label}) R^2={r2_baseline:.3f}; "
+    log.info(f"\nSUMMARY: baseline ({baseline_label}) R^2={r2_baseline:.3f}; "
           f"confirmatory layer ({conf['layer']}) R^2={conf['r2']:.3f} "
           f"(delta={conf['delta']:+.3f}, 95% CI={conf['ci']}, perm p={conf['p_value']:.3f})")
     if conf["ci"][0] > 0 and conf["p_value"] < 0.05:
-        print("-> the a priori (literature-motivated) layer shows signal beyond "
+        log.info("-> the a priori (literature-motivated) layer shows signal beyond "
               f"{baseline_label} that survives bootstrap + permutation checks: "
               "supports H1's deconfounding claim without a multiple-comparisons caveat.")
     else:
-        print("-> the a priori layer shows no signal distinguishable from noise at this n -- "
+        log.info("-> the a priori layer shows no signal distinguishable from noise at this n -- "
               "an honest negative/inconclusive result (see PIPELINE.md 2.1 risk #2).")
     if "exploratory" in diagnostics:
         exp = diagnostics["exploratory"]
         if exp["ci"][0] > 0 and exp["p_value"] < bonferroni_alpha:
-            print(f"-> the exploratory best-of-{len(layer_names)} layer ({exp['layer']}) ALSO survives "
+            log.info(f"-> the exploratory best-of-{len(layer_names)} layer ({exp['layer']}) ALSO survives "
                   "the stricter Bonferroni-adjusted threshold -- worth reporting as a secondary finding, "
                   "but flag it as exploratory since the layer was chosen after seeing the data.")
         else:
-            print(f"-> the exploratory best-of-{len(layer_names)} layer ({exp['layer']}) does NOT survive "
+            log.info(f"-> the exploratory best-of-{len(layer_names)} layer ({exp['layer']}) does NOT survive "
                   "Bonferroni correction -- treat its raw p-value as likely fishing, not a real effect.")
 
 

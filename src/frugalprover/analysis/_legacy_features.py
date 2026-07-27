@@ -17,6 +17,9 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from frugalprover.common.grading import SURFACE_KEYS
+from frugalprover.common.logging import get_logger
+
+log = get_logger(__name__)
 
 PHI_KEYS = list(SURFACE_KEYS)
 ALPHAS = np.logspace(-3, 3, 13)
@@ -88,7 +91,7 @@ def pick_best_layer_classification(records, type_names, budgets):
             LogisticRegression(max_iter=1000), X, y, cv=splits, method="predict_proba"
         )[:, 1]
         auc = roc_auc_score(y, proba) if len(set(y)) > 1 else float("nan")
-        print(f"  {layer}: CV AUC (grouped by problem) = {auc:.3f}")
+        log.info("  %s: CV AUC (grouped by problem) = %.3f", layer, auc)
         if auc > best_auc:
             best_auc, best_layer = auc, layer
     return best_layer, best_auc

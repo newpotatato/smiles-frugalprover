@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from frugalprover.common.config import ExtractConfig, PipelineConfig
 from frugalprover.common.io import read_jsonl, write_table
+from frugalprover.common.logging import get_logger, track
 from frugalprover.common.records import ProblemRecord
+
+log = get_logger(__name__)
 from frugalprover.oracle.states.base import HiddenStateExtractor
 from frugalprover.oracle.states.pooling import geometry, pool, resolve_layer
 from frugalprover.oracle.states.synthetic import SyntheticExtractor
@@ -66,10 +69,10 @@ def run_extract(cfg: PipelineConfig):
 
     rows = []
     try:
-        for i in range(0, len(problems), ec.batch_size):
+        starts = range(0, len(problems), ec.batch_size)
+        for i in track(starts, description="extracting", total=len(starts)):
             batch = problems[i : i + ec.batch_size]
             rows.extend(extractor.extract_batch(batch))
-            print(f"  {min(i + len(batch), len(problems))}/{len(problems)}", end="\r", flush=True)
         spec = extractor.spec
     finally:
         extractor.teardown()
@@ -84,7 +87,7 @@ def run_extract(cfg: PipelineConfig):
 
     n_pooled = len(spec["pooled_columns"])
     n_geom = len(spec["geometry_columns"])
-    print(f"\nwrote {len(df)} rows -> {out}")
-    print(f"  {n_pooled} pooled columns (hidden_size={spec['hidden_size']}), "
-          f"{n_geom} geometry columns")
+    log.info("wrote %d rows -> %s", len(df), out)
+    log.info("  %d pooled columns (hidden_size=%s), %d geometry columns",
+             n_pooled, spec["hidden_size"], n_geom)
     return df

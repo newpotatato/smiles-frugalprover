@@ -57,6 +57,9 @@ from sklearn.preprocessing import StandardScaler
 
 from frugalprover.analysis._records import add_paths_arg, load_records
 from frugalprover.analysis.id_estimators import mle_dimension, twonn_dimension
+from frugalprover.common.logging import get_logger
+
+log = get_logger(__name__)
 
 MIN_GROUP_SIZE = 10  # TwoNN/MLE need a reasonable number of points per level bucket
 K_NEIGHBORS = 5
@@ -92,18 +95,18 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     records = load_records(args.problems, args.hidden_states, args.budgets, args.pooling)
-    print(f"loaded {len(records)} records")
+    log.info(f"loaded {len(records)} records")
 
     swept = [r for r in records if "p_by_budget" in r]
-    print(f"{len(swept)}/{len(records)} records have budget labels "
+    log.info(f"{len(swept)}/{len(records)} records have budget labels "
           f"(used only for the solvability half of part 3 below; everything "
           f"else here uses all {len(records)} records -- pure activation geometry)")
 
     levels = sorted(set(r["level_num"] for r in records))
     counts = {lv: sum(1 for r in records if r["level_num"] == lv) for lv in levels}
-    print(f"problems per level (all tiers combined): {counts}")
+    log.info(f"problems per level (all tiers combined): {counts}")
     if min(counts.values()) < MIN_GROUP_SIZE:
-        print(f"WARNING: smallest level bucket has {min(counts.values())} problems "
+        log.warning(f"smallest level bucket has {min(counts.values())} problems "
               f"(< {MIN_GROUP_SIZE}) -- per-level ID estimates below will be noisy. "
               f"The per-problem local-density analysis (part 3) doesn't need "
               f"per-level grouping and is more reliable at this n.")
@@ -112,16 +115,16 @@ def main():
     # Reuse the same confirmatory/exploratory convention as analyze.py: last
     # layer (a priori, Ansuini-motivated) + middle layer (exploratory contrast).
     candidate_layers = [layer_names[-1], layer_names[len(layer_names) // 2]]
-    print(f"focusing on layers: {candidate_layers} (last=confirmatory, middle=exploratory contrast)")
+    log.info(f"focusing on layers: {candidate_layers} (last=confirmatory, middle=exploratory contrast)")
 
     # --- 1 & 2: per-level ID (TwoNN, MLE) and participation ratio, per candidate layer ---
     for layer in candidate_layers:
-        print(f"\n--- {layer}: ID (TwoNN, MLE) and participation ratio by MATH difficulty level ---")
+        log.info(f"\n--- {layer}: ID (TwoNN, MLE) and participation ratio by MATH difficulty level ---")
         twonn_ids, mle_ids, prs = [], [], []
         for lv in levels:
             X = np.array([r["activations"][layer] for r in records if r["level_num"] == lv])
             if len(X) < 6:
-                print(f"  level {lv}: only {len(X)} problems, skipping (too few for a stable estimate)")
+                log.info(f"  level {lv}: only {len(X)} problems, skipping (too few for a stable estimate)")
                 twonn_ids.append(float("nan"))
                 mle_ids.append(float("nan"))
                 prs.append(float("nan"))
@@ -135,7 +138,7 @@ def main():
             prs.append(pr)
             two_str = "n/a" if np.isnan(d_two) else f"{d_two:.2f}"
             mle_str = "n/a" if np.isnan(d_mle) else f"{d_mle:.2f}"
-            print(f"  level {lv} (n={len(X)}): TwoNN ID = {two_str}  MLE ID = {mle_str}  "
+            log.info(f"  level {lv} (n={len(X)}): TwoNN ID = {two_str}  MLE ID = {mle_str}  "
                   f"participation ratio = {pr:.2f}")
 
         fig, axes = plt.subplots(1, 3, figsize=(13, 4))
@@ -154,7 +157,7 @@ def main():
         plt.tight_layout()
         fname = f"id_vs_difficulty_{layer}.png"
         plt.savefig(out_dir / fname, dpi=150)
-        print(f"saved {fname}")
+        log.info(f"saved {fname}")
 
         valid = [(i, t, m, p) for i, (t, m, p) in enumerate(zip(twonn_ids, mle_ids, prs)) if not np.isnan(t)]
         if len(valid) >= 3:
@@ -163,45 +166,45 @@ def main():
             r_two, p_two = spearmanr(lv_valid, tvals)
             r_mle, p_mle = spearmanr(lv_valid, mvals)
             r_pr, p_pr = spearmanr(lv_valid, pvals)
-            print(f"  Spearman(level, TwoNN ID) = {r_two:+.3f} (p={p_two:.3f})")
-            print(f"  Spearman(level, MLE ID)   = {r_mle:+.3f} (p={p_mle:.3f})")
-            print(f"  Spearman(level, participation ratio) = {r_pr:+.3f} (p={p_pr:.3f})")
+            log.info(f"  Spearman(level, TwoNN ID) = {r_two:+.3f} (p={p_two:.3f})")
+            log.info(f"  Spearman(level, MLE ID)   = {r_mle:+.3f} (p={p_mle:.3f})")
+            log.info(f"  Spearman(level, participation ratio) = {r_pr:+.3f} (p={p_pr:.3f})")
             if np.sign(r_two) == np.sign(r_mle) and min(abs(r_two), abs(r_mle)) > 0.1:
-                print("  -> TwoNN and MLE (both nonlinear, different derivations) AGREE on "
+                log.info("  -> TwoNN and MLE (both nonlinear, different derivations) AGREE on "
                       "direction -- meaningfully stronger evidence than either alone.")
             elif np.sign(r_two) != np.sign(r_mle) and min(abs(r_two), abs(r_mle)) > 0.1:
-                print("  -> TwoNN and MLE DISAGREE on direction -- treat the nonlinear-ID "
+                log.info("  -> TwoNN and MLE DISAGREE on direction -- treat the nonlinear-ID "
                       "trend here as unstable, not a real effect, regardless of p-values.")
             if np.sign(r_two) != np.sign(r_pr) and min(abs(r_two), abs(r_pr)) > 0.1:
-                print("  -> nonlinear ID (TwoNN) and linear participation ratio disagree on "
+                log.info("  -> nonlinear ID (TwoNN) and linear participation ratio disagree on "
                       "direction -- report both, don't just quote the one that tells a nicer story.")
 
     # --- 3: per-problem local density vs level_num (all records) and vs
     # solvability (restricted to labeled problems, the only ones
     # with outcome labels at all) ---
-    print("\n--- per-problem local density (mean dist to k-NN) vs difficulty / outcome ---")
+    log.info("\n--- per-problem local density (mean dist to k-NN) vs difficulty / outcome ---")
     for layer in candidate_layers:
         X_all = StandardScaler().fit_transform(np.array([r["activations"][layer] for r in records]))
         density_all = local_density(X_all)
         level_arr = np.array([r["level_num"] for r in records], dtype=float)
         r_lvl, p_lvl = spearmanr(density_all, level_arr)
-        print(f"{layer}: Spearman(local density [n={len(records)}], level_num) = "
+        log.info(f"{layer}: Spearman(local density [n={len(records)}], level_num) = "
               f"{r_lvl:+.3f} (p={p_lvl:.3f})")
 
         swept_idx = [i for i, r in enumerate(records) if "p_by_budget" in r]
         if not swept_idx:
-            print("  no full_sweep records -- skipping density-vs-solvability "
+            log.info("  no full_sweep records -- skipping density-vs-solvability "
                   "(run `frugalprover budget` first)")
         else:
             max_budget = max(int(b) for b in records[swept_idx[0]]["p_by_budget"].keys())
             solvability = np.array([records[i]["p_by_budget"][str(max_budget)] for i in swept_idx])
             density_swept = density_all[swept_idx]
             if np.std(solvability) < 1e-9:
-                print(f"  Spearman(local density, accuracy@max_budget) = n/a "
+                log.info(f"  Spearman(local density, accuracy@max_budget) = n/a "
                       f"(constant across the {len(swept_idx)} swept problems)")
             else:
                 r_solv, p_solv = spearmanr(density_swept, solvability)
-                print(f"  Spearman(local density [n={len(swept_idx)} swept], "
+                log.info(f"  Spearman(local density [n={len(swept_idx)} swept], "
                       f"accuracy@max_budget) = {r_solv:+.3f} (p={p_solv:.3f})")
 
         plt.figure(figsize=(5, 4))
@@ -212,9 +215,9 @@ def main():
         plt.tight_layout()
         fname = f"local_density_vs_level_{layer}.png"
         plt.savefig(out_dir / fname, dpi=150)
-        print(f"saved {fname}")
+        log.info(f"saved {fname}")
 
-    print(f"\nNote: parts 1-2 and the level_num half of part 3 use all {len(records)} "
+    log.info(f"\nNote: parts 1-2 and the level_num half of part 3 use all {len(records)} "
           f"records (activations_only + full_sweep + baseline_single combined); the "
           f"solvability half of part 3 is restricted to the {len(swept)} full_sweep "
           f"records, since that's the only tier with outcome labels.")

@@ -25,7 +25,10 @@ from typing import Any
 import numpy as np
 
 from frugalprover.common.config import ExtractConfig
+from frugalprover.common.logging import get_logger
 from frugalprover.common.records import ProblemRecord
+
+log = get_logger(__name__)
 
 
 def _seed(problem_id: str, salt: int) -> int:
@@ -52,10 +55,11 @@ class SyntheticExtractor:
         self._rng = np.random.default_rng(self.cfg.synthetic_seed)
         direction = self._rng.normal(size=self.hidden_size)
         self._direction = direction / np.linalg.norm(direction)
-        print(f"synthetic extractor: {self.n_layers} layers x {self.hidden_size} dims, "
-              f"signal in L{self.signal_layer}_mean (strength {self.strength})")
+        log.info("synthetic extractor: %d layers x %d dims, signal in L%s_mean "
+                 "(strength %s)", self.n_layers, self.hidden_size,
+                 self.signal_layer, self.strength)
         if self.strength == 0:
-            print("  strength=0: pure noise, a true null baseline")
+            log.info("  strength=0: pure noise, a true null baseline")
 
     def extract_batch(self, problems: list[ProblemRecord]) -> list[dict[str, Any]]:
         rows = []

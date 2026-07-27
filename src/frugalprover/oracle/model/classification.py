@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import numpy as np
 
+from frugalprover.common.logging import get_logger
 from frugalprover.oracle.model.base import OracleModel
 from frugalprover.oracle.model.dataset import OracleDataset
 from frugalprover.oracle.model.features import build_blocks, fit_transform, transform
+
+log = get_logger(__name__)
 
 #: Regularization grid. Note sklearn's `Cs` is INVERSE regularization strength
 #: (C = 1/alpha), the opposite of Ridge's `alphas`. The grid is symmetric in log
@@ -97,10 +100,10 @@ class ClassificationOracle(OracleModel):
             raise ValueError("classification needs budget labels - run `frugalprover budget` first")
 
         if layer is None:
-            print(f"sweeping {len(ds.pooled_columns())} layers by grouped-CV AUC:")
+            log.info("sweeping %d layers by grouped-CV AUC:", len(ds.pooled_columns()))
             layer, self.layer_scores = self.select_layer(ds)
             self.cv_score = self.layer_scores[layer]
-            print(f"-> {layer} (CV AUC = {self.cv_score:.3f})")
+            log.info("-> %s (CV AUC = %.3f)", layer, self.cv_score)
         else:
             self.cv_score = self.score(ds, layer)
             self.layer_scores = {layer: self.cv_score}

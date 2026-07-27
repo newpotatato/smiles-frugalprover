@@ -16,9 +16,12 @@ from __future__ import annotations
 
 import numpy as np
 
+from frugalprover.common.logging import get_logger
 from frugalprover.oracle.model.base import OracleModel
 from frugalprover.oracle.model.dataset import OracleDataset
 from frugalprover.oracle.model.features import build_blocks, fit_transform, transform
+
+log = get_logger(__name__)
 
 ALPHAS = np.logspace(-3, 3, 13)
 
@@ -71,14 +74,14 @@ class RegressionOracle(OracleModel):
         from sklearn.linear_model import RidgeCV
 
         solved = self._check(ds)
-        print(f"{len(solved)}/{len(ds)} problems solved within the swept budgets "
-              f"(censored ones are dropped by this framing)")
+        log.info("%d/%d problems solved within the swept budgets "
+                 "(censored ones are dropped by this framing)", len(solved), len(ds))
 
         if layer is None:
-            print(f"sweeping {len(ds.pooled_columns())} layers by CV R^2:")
+            log.info("sweeping %d layers by CV R^2:", len(ds.pooled_columns()))
             layer, self.layer_scores = self.select_layer(ds)
             self.cv_score = self.layer_scores[layer]
-            print(f"-> {layer} (CV R^2 = {self.cv_score:.3f})")
+            log.info("-> %s (CV R^2 = %.3f)", layer, self.cv_score)
         else:
             self.cv_score = self.score(ds, layer)
             self.layer_scores = {layer: self.cv_score}

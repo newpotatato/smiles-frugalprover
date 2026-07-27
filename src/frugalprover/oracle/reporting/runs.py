@@ -12,6 +12,8 @@ hook here; it isn't worth it before then.
 from __future__ import annotations
 
 from pathlib import Path
+
+from frugalprover.common.logging import console
 from typing import Any
 
 from frugalprover.common.io import read_json
@@ -101,10 +103,15 @@ def _hashable(v: Any) -> Any:
 
 
 def print_runs_table(results_dir: str | Path) -> None:
+    def out(text: str = "") -> None:
+        # markup/highlight off: run names and config values are arbitrary and
+        # must not be reinterpreted as Rich markup or auto-colored.
+        console.print(text, markup=False, highlight=False)
+
     runs = collect_runs(results_dir)
     if not runs:
-        print(f"no runs with a metrics.json under {results_dir}")
-        print("run `frugalprover report` to produce one.")
+        out(f"no runs with a metrics.json under {results_dir}")
+        out("run `frugalprover report` to produce one.")
         return
 
     varying = differing_keys(runs)
@@ -123,20 +130,20 @@ def print_runs_table(results_dir: str | Path) -> None:
 
     widths = [max(len(str(h)), *(len(str(row[i])) for row in rows)) for i, h in enumerate(headers)]
     line = "  ".join(h.ljust(w) for h, w in zip(headers, widths))
-    print(line)
-    print("-" * len(line))
+    out(line)
+    out("-" * len(line))
     for row in rows:
-        print("  ".join(str(c).ljust(w) for c, w in zip(row, widths)))
+        out("  ".join(str(c).ljust(w) for c, w in zip(row, widths)))
 
     if varying:
-        print(f"\n(showing the {len(varying)} config key(s) that differ between runs)")
+        out(f"\n(showing the {len(varying)} config key(s) that differ between runs)")
     else:
-        print("\n(all runs share the same config)")
+        out("\n(all runs share the same config)")
 
     scored = [r for r in runs if isinstance(r["score"], (int, float))]
     if len(scored) > 1:
         best = max(scored, key=lambda r: r["score"])
-        print(f"best: {best['run']} - {best['metric']} {best['score']:.3f} at {best['layer']}")
+        out(f"best: {best['run']} - {best['metric']} {best['score']:.3f} at {best['layer']}")
 
 
 def _fmt(v: Any) -> str:
