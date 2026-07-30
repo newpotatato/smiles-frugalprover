@@ -23,7 +23,10 @@ from typing import TYPE_CHECKING
 
 from frugalprover.common.config import AgentConfig, BudgetConfig
 from frugalprover.common.grading import extract_answer, grade, normalize
+from frugalprover.common.logging import get_logger
 from frugalprover.common.records import BudgetRecord, ProblemRecord
+
+log = get_logger(__name__)
 
 if TYPE_CHECKING:
     # Type-only: never a runtime import, keeping the one-way oracle -> (no) agent
@@ -50,6 +53,12 @@ class TokenSweepEstimator:
 
         self.agent = build_agent(self.agent_cfg)
         self.agent.setup()
+        log.info("sweep agent: prover=%s, verifiers=[%s], corrector=%s",
+                 self.agent_cfg.prover.model,
+                 ", ".join(v.model for v in self.agent_cfg.verifiers),
+                 self.agent_cfg.corrector.model)
+        log.info("sweeping budgets=%s at n_samples=%d, success_threshold=%.2f",
+                 sorted(self.cfg.budgets), self.cfg.n_samples, self.cfg.success_threshold)
 
     def estimate_batch(self, problems: list[ProblemRecord]) -> list[BudgetRecord]:
         if self.agent is None:
@@ -65,13 +74,24 @@ class TokenSweepEstimator:
 
         # Sweep by budget, not by problem: one solve_batch handles every problem
         # at budget B before moving to the next B (all at 128, then all at 256).
-        for budget in budgets:
+        for bi, budget in enumerate(budgets, 1):
+            log.info("budget %d (%d/%d): solving %d problems x %d samples",
+                     budget, bi, len(budgets), len(problems), cfg.n_samples)
             solved = self._solve_at(problems, budget)  # list[list[Sample]]
+            cleared = 0
+            budget_tokens = 0
             for i, (p, samples) in enumerate(zip(problems, solved)):
                 texts = [s.text for s in samples]
-                n_success[i][budget] = sum(grade(t, p.answer) for t in texts)
+                n_ok = sum(grade(t, p.answer) for t in texts)
+                n_success[i][budget] = n_ok
                 sc[i][budget] = self._self_consistency(texts, p.answer)
-                tokens_spent[i] += sum(s.tokens for s in samples)
+                b_tokens = sum(s.tokens for s in samples)
+                tokens_spent[i] += b_tokens
+                budget_tokens += b_tokens
+                if cfg.n_samples and n_ok / cfg.n_samples >= cfg.success_threshold:
+                    cleared += 1
+            log.info("budget %d: %d/%d problems cleared (tau=%.2f), %d tokens this pass",
+                     budget, cleared, len(problems), cfg.success_threshold, budget_tokens)
 
         agent_label = self.agent_cfg.prover.model
         return [
