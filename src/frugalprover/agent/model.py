@@ -248,6 +248,13 @@ class HFClient(ModelClient):
                 f"quantization={quant!r} needs a CUDA GPU (bitsandbytes has no "
                 "CPU kernels); set quantization: none to run on CPU."
             )
+        # LLM.int8()'s matmul kernel only runs in fp16: handed bf16 activations it
+        # casts them itself and warns once per call, which is thousands of lines
+        # across a verify-repair sweep. Asking for fp16 up front is the same
+        # arithmetic without the cast. 4bit has no such constraint -- it takes
+        # bf16 as its compute dtype directly (see _quant_config).
+        if quant == "8bit":
+            dtype = torch.float16
 
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         if tokenizer.pad_token is None:
