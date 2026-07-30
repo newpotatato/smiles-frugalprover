@@ -15,6 +15,9 @@
 #   quantization: 4bit  -- ~5GB of weights instead of ~15GB at bf16. Needs CUDA
 #                          and `pip install -e ".[quant]"`. Set it identically on
 #                          every role or they stop sharing and you load twice.
+#                          Prefer 4bit (NF4) over 8bit: smaller, faster, and it
+#                          keeps bf16 compute, where 8bit forces everything to
+#                          fp16 through the LLM.int8() kernel.
 #   max_batch_size      -- prompts per generate call, which is what the KV cache
 #                          scales with. Lower it if the active set OOMs mid-run;
 #                          raise it for throughput once the weights fit.
