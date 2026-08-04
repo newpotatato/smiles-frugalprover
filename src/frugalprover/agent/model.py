@@ -318,22 +318,43 @@ class HFClient(ModelClient):
             raise RuntimeError("call setup() before generate()")
         if not prompts:
             return []
+        import time
+
         batch_size = max(1, self.spec.max_batch_size)
+        n_chunks = (len(prompts) + batch_size - 1) // batch_size
+        log.info("[%s] generating %d prompt(s) in %d chunk(s), max_new_tokens=%d, decoding=%s",
+                 role, len(prompts), n_chunks, max_tokens,
+                 "sampling" if (temperature and temperature > 0) else "greedy")
         out: list[str] = []
-        for start in range(0, len(prompts), batch_size):
+        t0 = time.perf_counter()
+        for ci, start in enumerate(range(0, len(prompts), batch_size), 1):
             chunk = prompts[start:start + batch_size]
-            out.extend(self._generate_chunk(chunk, max_tokens, temperature, top_p))
+            tc = time.perf_counter()
+            out.extend(self._generate_chunk(
+                chunk, max_tokens, temperature, top_p, role=role, chunk=(ci, n_chunks)))
+            log.info("[%s] chunk %d/%d finished in %.1fs", role, ci, n_chunks,
+                     time.perf_counter() - tc)
+        log.info("[%s] done: %d completion(s) in %.1fs", role, len(out),
+                 time.perf_counter() - t0)
         return out
 
     def _generate_chunk(
-        self, prompts: list[str], max_tokens: int, temperature: float, top_p: float
+        self, prompts: list[str], max_tokens: int, temperature: float, top_p: float,
+        *, role: str = "prover", chunk: tuple[int, int] = (1, 1),
     ) -> list[str]:
+        import time
+
         import torch
+        from transformers import StoppingCriteria, StoppingCriteriaList
 
         texts = [self._render(p) for p in prompts]
         enc = self.tokenizer(
             texts, return_tensors="pt", padding=True
         ).to(self.device)
+        prompt_len = enc["input_ids"].shape[1]
+        ci, n_chunks = chunk
+        log.info("[%s] chunk %d/%d: %d prompt(s), %d prompt tokens -> generating up to "
+                 "%d new tokens", role, ci, n_chunks, len(prompts), prompt_len, max_tokens)
 
         # temperature <= 0 means greedy; sampling params are ignored by
         # transformers when do_sample=False, so gate on it to avoid warnings.
@@ -345,6 +366,28 @@ class HFClient(ModelClient):
         )
         if do_sample:
             gen_kwargs.update(temperature=temperature, top_p=top_p)
+
+        # Heartbeat: `model.generate` is one blocking call that can run for
+        # minutes at a large token cap. A StoppingCriteria is invoked after every
+        # decoding step, so it's a zero-cost hook to log token progress -- it never
+        # stops (always returns False), it just reports, turning an apparent freeze
+        # into a visible "generating N/max tokens" trail.
+        class _Heartbeat(StoppingCriteria):
+            def __init__(self, every_seconds: float = 10.0):
+                self.every = every_seconds
+                self.start = time.perf_counter()
+                self.last = self.start
+
+            def __call__(self, input_ids, scores, **kwargs):
+                now = time.perf_counter()
+                if now - self.last >= self.every:
+                    generated = input_ids.shape[1] - prompt_len
+                    log.info("[%s]   ...generating %d/%d new tokens (%.0fs elapsed)",
+                             role, generated, max_tokens, now - self.start)
+                    self.last = now
+                return False
+
+        gen_kwargs["stopping_criteria"] = StoppingCriteriaList([_Heartbeat()])
 
         with torch.no_grad():
             out = self.model.generate(**enc, **gen_kwargs)
