@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from frugalprover.agent.aggregation import aggregate, collect_flaws
-from frugalprover.agent.base import Sample
+from frugalprover.agent.base import AttemptTrace, RoundTrace, Sample
 from frugalprover.agent.model import ModelClient, build_model_client
 from frugalprover.agent.roles import Corrector, Critique, Prover, Verifier
 from frugalprover.common.config import AgentConfig, ModelSpec
@@ -51,6 +51,9 @@ class _Attempt:
     tokens: int = 0
     accepted: bool = False
     done: bool = False
+    #: Replayable trajectory, filled in as the loop advances. Lets Stage 2
+    #: reconstruct smaller budgets from one pass -- see agent/base.py.
+    trace: AttemptTrace | None = None
 
 
 class VerifyRepairAgent:
@@ -96,6 +99,34 @@ class VerifyRepairAgent:
         max_new_tokens: int,
         n_samples: int,
     ) -> list[list[Sample]]:
+        attempts = self._run(problems, max_new_tokens, n_samples)
+        return self._regroup(problems, attempts, n_samples)
+
+    def solve_batch_traced(
+        self,
+        problems: list[ProblemRecord],
+        max_new_tokens: int,
+        n_samples: int,
+    ) -> list[list[AttemptTrace]]:
+        """The `TracingAgent` capability: one pass, replayable at any lower cap.
+
+        Same loop as `solve_batch` -- it just hands back each attempt's
+        trajectory instead of only its endpoint, so Stage 2 can read off what a
+        smaller budget would have produced without paying for another pass.
+        """
+        attempts = self._run(problems, max_new_tokens, n_samples)
+        self._regroup(problems, attempts, n_samples)  # keeps last_traces populated
+        out: list[list[AttemptTrace]] = [[] for _ in problems]
+        for a in attempts:
+            out[a.prob_idx].append(a.trace)
+        return out
+
+    def _run(
+        self,
+        problems: list[ProblemRecord],
+        max_new_tokens: int,
+        n_samples: int,
+    ) -> list[_Attempt]:
         if self.prover is None:
             raise RuntimeError("call setup() before solve_batch()")
         cap = max_new_tokens if max_new_tokens and max_new_tokens > 0 else None
@@ -113,8 +144,10 @@ class VerifyRepairAgent:
                  len(attempts), len(problems), n_samples,
                  cap if cap is not None else "none", self.cfg.max_rounds)
         for a, text in zip(attempts, self.prover.propose([a.problem for a in attempts])):
+            n_tok = self.prover.count_tokens(text)
             a.candidate = text
-            a.tokens += self.prover.count_tokens(text)
+            a.tokens += n_tok
+            a.trace = AttemptTrace(prover_tokens=n_tok, candidate_0=text)
 
         for round_i in range(self.cfg.max_rounds):
             active = self._active_under_budget(attempts, cap)
@@ -125,10 +158,13 @@ class VerifyRepairAgent:
             accepted_this_round = 0
             for a, crits in zip(active, self._audit_batch(active)):
                 a.rounds += 1
-                a.tokens += sum(
+                n_tok = sum(
                     v.count_tokens(c.raw) for v, c in zip(self.verifiers, crits)
                 )
-                if aggregate(crits, self.cfg.aggregation):
+                a.tokens += n_tok
+                ok = aggregate(crits, self.cfg.aggregation)
+                a.trace.rounds.append(RoundTrace(verifier_tokens=n_tok, accepted=ok))
+                if ok:
                     a.accepted = a.done = True
                     accepted_this_round += 1
                 else:
@@ -152,13 +188,18 @@ class VerifyRepairAgent:
                 repairable,
                 self.corrector.repair([(a.problem, a.candidate, a.flaws) for a in repairable]),
             ):
+                n_tok = self.corrector.count_tokens(text)
                 a.candidate = text
-                a.tokens += self.corrector.count_tokens(text)
+                a.tokens += n_tok
+                # Survivors that were NOT repaired keep corrector_tokens=None,
+                # which is exactly what replay() reads as "stop here".
+                a.trace.rounds[-1].corrector_tokens = n_tok
+                a.trace.rounds[-1].candidate_after = text
 
         for a in attempts:  # anything the loop left hanging
             a.done = True
 
-        return self._regroup(problems, attempts, n_samples)
+        return attempts
 
     def _active_under_budget(self, attempts: list[_Attempt], cap: int | None) -> list[_Attempt]:
         """Not-yet-done attempts still under the token cap; finalize the rest."""
@@ -267,6 +308,19 @@ class SingleCallAgent:
             ])
         self.last_traces = traces
         return out
+
+    def solve_batch_traced(self, problems, max_new_tokens, n_samples) -> list[list[AttemptTrace]]:
+        """`TracingAgent`: one call per sample, so the trace is just its cost.
+
+        With no rounds there is nothing for a smaller budget to truncate, and
+        `replay` correctly returns the same Sample at every cap -- which is the
+        honest answer for an agent that ignores the budget.
+        """
+        solved = self.solve_batch(problems, max_new_tokens, n_samples)
+        return [
+            [AttemptTrace(prover_tokens=s.tokens, candidate_0=s.text) for s in samples]
+            for samples in solved
+        ]
 
     @property
     def spec(self) -> dict:

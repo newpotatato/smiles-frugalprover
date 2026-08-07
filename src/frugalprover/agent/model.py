@@ -7,16 +7,21 @@ a local transformer.
 
 `MockModelClient` needs no torch and no network, so the whole loop runs and is
 testable on a laptop. `HFClient` runs an open model locally via `transformers`.
-`openai` is still a registered stub that raises `NotImplementedError` with a spec
--- the same "seam visible, body later" pattern as oracle/budget/sweep.py.
+`OpenAIClient` drives an OpenAI-compatible server (vLLM) over HTTP, which is the
+throughput path: the server batches continuously across every in-flight request
+instead of the fixed-size waves `HFClient` is limited to, and this process needs
+no torch at all.
 
 Nothing here imports from `oracle/`; the dependency runs one way (see
 agent/README.md).
 """
 from __future__ import annotations
 
+import os
 import threading
 from abc import ABC, abstractmethod
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -125,21 +130,220 @@ class MockModelClient(ModelClient):
 
 
 class OpenAIClient(ModelClient):
-    """OpenAI-compatible endpoint (e.g. a vLLM `--served-model-name`).
+    """OpenAI-compatible endpoint, e.g. ``vllm serve --served-model-name ...``.
 
-    NOT IMPLEMENTED. A conforming body would, lazily inside `setup()`, build an
-    HTTP client for `spec.base_url` with the key read from
-    `os.environ[spec.api_key_env]` (never the key inline), then POST each prompt
-    to `/v1/chat/completions` with `model=spec.model`, `max_tokens`,
-    `temperature`, `top_p`, and return `choices[0].message.content`.
-    `count_tokens` should use the served model's tokenizer.
+    One HTTP request per prompt, dispatched concurrently through a thread pool
+    and reassembled **in input order**. The server does its own continuous
+    batching, so throughput comes from keeping many requests in flight
+    (``spec.max_concurrency``) rather than from packing a tensor.
+
+    Each prompt is sent as a single user message, so the server applies the
+    model's own chat template -- the same conversation :meth:`HFClient._render`
+    builds locally. Divergence there would mean hf-labelled and server-labelled
+    runs are not the same experiment.
+
+    Nothing in this class imports torch: with the model on a server, a CPU-only
+    box can drive a full Stage 2 labeling run.
     """
 
-    def setup(self) -> None:
-        raise NotImplementedError(_OPENAI_SPEC)
+    #: Completion-token counts are cached by returned text so `count_tokens` can
+    #: answer from what the server already reported. Bounded because a long run
+    #: generates far more text than needs to stay resident -- every call site
+    #: counts a completion in the same round it was generated.
+    _TOKEN_CACHE_MAX = 8192
 
-    def generate(self, prompts, *, max_tokens, temperature, top_p, role="prover"):
-        raise NotImplementedError(_OPENAI_SPEC)
+    def __init__(self, spec: ModelSpec):
+        super().__init__(spec)
+        self._client = None
+        self._http = None
+        self._tokens: "OrderedDict[str, int]" = OrderedDict()
+        self._tok_lock = threading.Lock()
+        self._tokenize_url: str | None = None
+        self._tokenize_dead = False
+        self._warned_estimate = False
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def setup(self) -> None:
+        if self._client is not None:
+            return
+        try:
+            import httpx
+            from openai import OpenAI
+        except ImportError as e:
+            raise ImportError(
+                "agent client 'openai' needs the openai SDK: "
+                "pip install 'frugalprover[openai]'"
+            ) from e
+
+        base_url = self.spec.base_url or "http://127.0.0.1:8000/v1"
+        # api_key_env names the variable, never holds the key. A server started
+        # without --api-key accepts any bearer token, but the SDK refuses to send
+        # an empty one, so "EMPTY" is the right default rather than "".
+        key = os.environ.get(self.spec.api_key_env or "OPENAI_API_KEY") or "EMPTY"
+        self._client = OpenAI(
+            base_url=base_url,
+            api_key=key,
+            max_retries=6,
+            # The SDK default is 600s. An 8k-token generation queued behind a few
+            # hundred others exceeds that routinely, and the failure surfaces as a
+            # random subset of requests dying rather than as a timeout -- which
+            # would look like the model refusing to answer.
+            timeout=httpx.Timeout(1800.0, connect=15.0),
+        )
+        # vLLM serves /tokenize at the server root, a level above the /v1 prefix.
+        # Own httpx client rather than reaching into the SDK's private one.
+        root = base_url.rstrip("/")
+        root = root[: -len("/v1")] if root.endswith("/v1") else root
+        self._tokenize_url = root + "/tokenize"
+        self._http = httpx.Client(timeout=httpx.Timeout(30.0, connect=15.0),
+                                  headers={"Authorization": f"Bearer {key}"})
+        log.info("agent client 'openai': %s (model=%s, max_concurrency=%d)",
+                 base_url, self.spec.model, self.spec.max_concurrency)
+
+    def teardown(self) -> None:
+        for attr in ("_client", "_http"):
+            obj = getattr(self, attr)
+            setattr(self, attr, None)
+            if obj is not None:
+                try:
+                    obj.close()
+                except Exception:  # noqa: BLE001 - teardown must not mask a real error
+                    pass
+        with self._tok_lock:
+            self._tokens.clear()
+
+    # -- generation --------------------------------------------------------
+
+    def generate(
+        self,
+        prompts: list[str],
+        *,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        role: str = "prover",
+    ) -> list[str]:
+        if self._client is None:
+            raise RuntimeError("call setup() before generate()")
+        if not prompts:
+            return []
+        import time
+
+        n_workers = max(1, min(self.spec.max_concurrency, len(prompts)))
+        log.info("[%s] generating %d prompt(s) via %s, %d worker(s), max_tokens=%d, decoding=%s",
+                 role, len(prompts), self.spec.base_url, n_workers, max_tokens,
+                 "sampling" if (temperature and temperature > 0) else "greedy")
+
+        t0 = time.perf_counter()
+        progress = {"done": 0, "last": t0}
+        lock = threading.Lock()
+
+        def one(prompt: str) -> str:
+            kwargs = dict(
+                model=self.spec.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+            )
+            # Deliberately no `seed`: n_samples sends identical prompts, and a
+            # per-request seed would return identical completions, collapsing the
+            # self-consistency baseline to a point mass.
+            if temperature is not None and temperature > 0.0:
+                kwargs.update(temperature=temperature, top_p=top_p)
+            else:
+                kwargs["temperature"] = 0.0
+            resp = self._client.chat.completions.create(**kwargs)
+            text = resp.choices[0].message.content or ""
+            usage = getattr(resp, "usage", None)
+            if usage is not None and usage.completion_tokens is not None:
+                self._remember(text, usage.completion_tokens)
+            # Heartbeat, mirroring HFClient's: a long batch is otherwise silent.
+            with lock:
+                progress["done"] += 1
+                now = time.perf_counter()
+                if now - progress["last"] >= 10.0:
+                    log.info("[%s]   ...%d/%d completion(s) (%.0fs elapsed)",
+                             role, progress["done"], len(prompts), now - t0)
+                    progress["last"] = now
+            return text
+
+        with ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix=f"gen-{role}") as ex:
+            futures = [ex.submit(one, p) for p in prompts]
+            # Indexing the futures list -- NOT as_completed -- is what preserves
+            # input order. The loop zips these results positionally against its
+            # attempts, so an out-of-order return would silently attach one
+            # problem's solution to another.
+            out = [f.result() for f in futures]
+
+        dt = time.perf_counter() - t0
+        log.info("[%s] done: %d completion(s) in %.1fs (%.1f req/s)",
+                 role, len(out), dt, len(out) / dt if dt > 0 else 0.0)
+        return out
+
+    # -- token accounting --------------------------------------------------
+
+    def _remember(self, text: str, n: int) -> None:
+        with self._tok_lock:
+            self._tokens[text] = n
+            self._tokens.move_to_end(text)
+            while len(self._tokens) > self._TOKEN_CACHE_MAX:
+                self._tokens.popitem(last=False)
+
+    def count_tokens(self, text: str) -> int:
+        """Tokens the server generated for `text`.
+
+        This has to be right, not merely close. The count is the only input to
+        the verify-repair loop's budget cap, so a systematic undercount means the
+        cap never fires, every budget produces the same outcome, and `b_star`
+        degenerates into a binary solved flag with nothing in the output looking
+        wrong. The inherited whitespace default is a 3-5x undercount on
+        LaTeX-heavy math, so it is never used here.
+        """
+        with self._tok_lock:
+            n = self._tokens.get(text)
+        if n is not None:
+            return n                                # exact: the server told us
+        n = self._count_via_server(text)
+        if n is not None:
+            self._remember(text, n)
+            return n                                # exact: the server's tokenizer
+        if not self._warned_estimate:
+            log.warning(
+                "[openai] no usage or /tokenize count available for %s -- falling back to a "
+                "character heuristic. The budget axis will be approximate; check that the "
+                "endpoint returns `usage` or supports POST /tokenize.", self.spec.model,
+            )
+            self._warned_estimate = True
+        return max(1, len(text) // 4)
+
+    def _count_via_server(self, text: str) -> int | None:
+        """vLLM's POST /tokenize. Returns None if the backend doesn't have it."""
+        if self._http is None or self._tokenize_dead or not self._tokenize_url:
+            return None
+        try:
+            resp = self._http.post(
+                self._tokenize_url,
+                json={"model": self.spec.model, "prompt": text, "add_special_tokens": False},
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(f"HTTP {resp.status_code}")
+            return int(resp.json()["count"])
+        except Exception as e:  # noqa: BLE001 - any failure means "not available"
+            self._tokenize_dead = True  # try once, never hammer a 404 per call
+            log.debug("[openai] /tokenize unavailable (%s); using cached usage only", e)
+            return None
+
+    def describe(self) -> dict:
+        # How tokens were counted belongs in the A2 sidecar next to the model id:
+        # the server's completion_tokens and HFClient's decode-then-re-encode are
+        # not the same measurement, so two runs counted differently are not one
+        # labeling run.
+        return {
+            **super().describe(),
+            "base_url": self.spec.base_url,
+            "max_concurrency": self.spec.max_concurrency,
+            "token_accounting": "server_usage",
+        }
 
 
 class HFClient(ModelClient):
@@ -469,10 +673,3 @@ def build_model_client(spec: ModelSpec) -> ModelClient:
             f"Available: {sorted(MODEL_CLIENTS)}"
         ) from None
     return cls(spec)
-
-
-_OPENAI_SPEC = (
-    "agent model client 'openai' is not implemented yet.\n"
-    "  - Use client: mock to run the loop on CPU.\n"
-    "  - To implement: see the docstring of frugalprover.agent.model.OpenAIClient."
-)

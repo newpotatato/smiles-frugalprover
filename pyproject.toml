@@ -42,6 +42,13 @@ gpu = ["torch>=2.0", "transformers>=4.44,<5", "accelerate", "tqdm"]
 # Kept separate because bitsandbytes ships CUDA-only wheels: folding it into
 # [gpu] would break that install on any machine where [gpu] works fine on CPU.
 quant = ["bitsandbytes>=0.43"]
+# Client for `agent.<role>.client: openai` (agent/model.py:OpenAIClient) -- an
+# OpenAI-compatible endpoint, typically `vllm serve`. Deliberately NOT folded
+# into [gpu]: when the model runs on a server the labeling driver needs no torch
+# at all, so `pip install -e ".[openai]"` on a CPU-only box is a complete Stage 2
+# install. The server itself is installed separately (pip install vllm), on the
+# machine with the GPU.
+openai = ["openai>=1.40", "httpx"]
 
 [project.scripts]
 frugalprover = "frugalprover.cli:main"

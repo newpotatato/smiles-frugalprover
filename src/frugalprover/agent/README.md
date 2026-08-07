@@ -13,9 +13,11 @@ it and are selected with `build_agent(cfg.agent)`.
 - `model.py` — `ModelClient` ABC, a scriptable `MockModelClient` that runs the
   loop on CPU with no models or network, and `HFClient` (local
   `transformers.generate`; same-model roles share one loaded copy, optionally
-  bitsandbytes-quantized via `ModelSpec.quantization`). The `openai`
-  (vLLM-served, OpenAI-compatible) backend is registered but raises
-  `NotImplementedError` with a spec until implemented.
+  bitsandbytes-quantized via `ModelSpec.quantization`), and `OpenAIClient` (an
+  OpenAI-compatible endpoint, typically `vllm serve` — concurrent order-preserving
+  dispatch, `ModelSpec.max_concurrency` requests in flight, exact token counts
+  from the server's `usage.completion_tokens`). The `openai` path imports no
+  torch, so a CPU-only box can drive a full labeling run against a remote GPU.
 - `roles.py` — `Prover`, `Verifier`, `Corrector`, and `Critique` (verdict +
   specific diagnosed flaws — the feedback contract handed to the corrector).
 - `aggregation.py` — how the k verdicts combine: `unanimity` vs `majority`.

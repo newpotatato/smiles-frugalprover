@@ -110,11 +110,34 @@ class BudgetConfig:
     #: which classification can use but regression cannot.
     budgets: list[int] = field(default_factory=lambda: [128, 256, 512])
     n_samples: int = 3
+    #: Run a single pass at max(budgets) and reconstruct every smaller budget
+    #: from the recorded trajectory, instead of one full re-solve per budget.
+    #: Requires an agent exposing `solve_batch_traced` AND every budget >= every
+    #: role's max_tokens, so sweep.py's per-role clamp never binds and the
+    #: smaller budgets really are prefixes of the largest. Falls back to
+    #: independent passes, with a warning, when either condition fails.
+    single_pass_reconstruct: bool = False
     #: tau. B* is the smallest budget solved at least this often.
     success_threshold: float = 0.5
     temperature: float = 0.7
     top_p: float = 0.9
     batch_size: int = 6
+    #: Stop cleanly once this many wall-clock seconds have elapsed, measured from
+    #: the start of run_budget (model loading included). The in-flight batch is
+    #: always finished and flushed, and the sorted output plus sidecar are still
+    #: written; rerunning resumes the remainder. None = run to completion.
+    time_budget_s: float | None = None
+    #: Shuffle problem order with `seed` before labeling. problems.jsonl is
+    #: written sorted by id, i.e. grouped by subject (oracle/sample/math_sampler.py),
+    #: so any truncated run -- by `time_budget_s` or by `max_problems` -- would
+    #: otherwise cover only the alphabetically-early subjects. Since `subject` is
+    #: a training feature, that is a confound rather than an inconvenience.
+    shuffle: bool = False
+    #: Log and skip a batch that raises, instead of aborting the run. Worth
+    #: setting for a long unattended run against a remote server, where one
+    #: transient failure would otherwise discard the remaining hours; per-record
+    #: flushing and resume bound the loss to the failed batch.
+    continue_on_error: bool = False
     prompt_template: str = SOLVE_PROMPT
     #: Which A1 file to label. Budget labeling is the expensive stage, so this
     #: often points at a smaller file than Stage 3 uses.
@@ -210,8 +233,9 @@ class ModelSpec:
     """How one role (prover / verifier / corrector) reaches a model.
 
     ``mock`` runs on CPU with no weights; ``hf`` runs a local
-    ``transformers.generate`` model (see agent/model.py:HFClient); ``openai`` (a
-    vLLM-served, OpenAI-compatible endpoint) is registered but still raises.
+    ``transformers.generate`` model (see agent/model.py:HFClient); ``openai``
+    talks to a vLLM-served, OpenAI-compatible endpoint at ``base_url`` (see
+    agent/model.py:OpenAIClient) and needs no torch in this process at all.
     """
 
     client: str = "mock"           # mock | openai | hf
@@ -222,8 +246,16 @@ class ModelSpec:
     base_url: str | None = None    # openai-compatible endpoint
     api_key_env: str | None = None  # env var holding the key, never the key itself
     #: hf only: prompts per model.generate call, bounding peak GPU memory when the
-    #: loop's active set is large. Ignored by mock/openai.
+    #: loop's active set is large. Ignored by mock; the openai client uses
+    #: max_concurrency instead.
     max_batch_size: int = 8
+    #: openai only: in-flight requests per generate() call. A served backend does
+    #: its own continuous batching, so this is a *concurrency* limit rather than a
+    #: memory bound like max_batch_size -- kept separate because the two defaults
+    #: differ by an order of magnitude and reusing max_batch_size (default 8, and
+    #: 4 in the local-hf configs) would silently serialize a 192-request active
+    #: set into 48 waves. Set it >= budget.batch_size * budget.n_samples.
+    max_concurrency: int = 64
     #: hf only: load the weights quantized via bitsandbytes (CUDA only), trading
     #: accuracy for memory -- 4bit puts a 7B in ~5GB against ~15GB at bf16, which
     #: is the difference between fitting a 16GB card and not. Roles sharing a

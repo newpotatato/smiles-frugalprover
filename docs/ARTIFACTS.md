@@ -75,8 +75,12 @@ Produced by Stage 1 (`sample`). Read by Stages 2 and 3. One JSON object per line
 
 ## A2 — `budgets.jsonl`
 
-Produced by Stage 2 (`budget`). Read by Stage 4. **Stage 2 is not implemented
-yet** — see [Implementing Stage 2](#implementing-stage-2).
+Produced by Stage 2 (`budget`). Read by Stage 4.
+
+Under `budget.single_pass_reconstruct` each record also carries
+`reconstructed: true` and `tokens_generated` — the tokens the single pass really
+generated, as against `tokens_spent`, which stays a sum across the budget sweep
+so reconstructed and independently-swept records remain on one scale.
 
 ### What this file means
 
