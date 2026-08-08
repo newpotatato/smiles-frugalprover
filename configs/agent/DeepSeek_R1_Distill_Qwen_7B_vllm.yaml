@@ -14,23 +14,52 @@
 #     --served-model-name deepseek-r1-7b \
 #     --data-parallel-size 4 \        # replicas, one per GPU; drop for a single GPU
 #     --dtype bfloat16 \
-#     --gpu-memory-utilization 0.92 \
-#     --max-model-len 20480 \
-#     --max-num-seqs 256 \
+#     --gpu-memory-utilization 0.88 \   # 0.92 OOMs a 24GB card, see below
+#     --max-model-len 24576 \
+#     --max-num-seqs 24 \               # a 24GB card holds ~24, not 256
 #     --enable-prefix-caching \
-#     --kv-cache-dtype fp8 \
 #     --port 8000
 #
-#   export VLLM_API_KEY=EMPTY        # any value; vLLM without --api-key accepts all
+# Do NOT add --kv-cache-dtype fp8. It looks like free throughput (half the KV
+# memory, twice the concurrency) and it silently destroys generation on this
+# model. Measured A/B on one 4090, 8 problems, everything else held fixed:
+#
+#   fp8   7/8 completions collapse into repetition loops ("111111...",
+#         "out of out of out of...") and every one runs to the 8192 cap
+#   auto  0/8 degenerate, all stop naturally at 520-919 tokens
+#
+# It is not even a speed/quality trade: because degenerate output never stops
+# early, fp8 burned 11x the tokens and 20x the wall time to produce garbage.
+# vLLM warns about this at startup ("may cause accuracy drop without a proper
+# scaling factor"); on a reasoning model with long CoT, take the warning
+# literally.
+#
+#   # Any value, but it must match on both sides: vLLM reads VLLM_API_KEY from
+#   # its own environment and, if set, requires `Authorization: Bearer <it>` on
+#   # every /v1 request (equivalent to passing --api-key). /health and /metrics
+#   # stay open, so a mismatch looks like a healthy server that 401s all traffic.
+#   export VLLM_API_KEY=EMPTY
 #   frugalprover budget -c configs/base.yaml \
 #       -c configs/agent/DeepSeek_R1_Distill_Qwen_7B_vllm.yaml --run-name label5h
 #
 # Three server flags are not tuning:
 #
 #   --served-model-name  must equal `model:` below, or every request 404s.
-#   --max-model-len      the corrector prompt embeds the previous candidate (up
-#                        to 8192) plus the problem plus 8192 out ~= 17.5k. Set it
-#                        lower and vLLM returns a 400 partway through a run.
+#   --max-model-len      >= 21k, and 20480 is NOT enough -- measured, not
+#                        estimated. The corrector prompt carries the candidate
+#                        (<=8192) AND the verifier's full critique via `flaws`
+#                        (<=4096), plus problem and template: ~12.3k in. With
+#                        8192 out that is 20481, one token over 20480, and vLLM
+#                        400s the moment the first repair round is reached --
+#                        after the run has already been going for a while.
+#   --gpu-memory-utilization
+#                        0.88 on a 24GB card. At 0.92 vLLM budgets 21.6GiB then
+#                        needs 14.3 (weights) + ~7 (KV) + 0.9 (CUDA graphs) and
+#                        dies with CUDA OOM while capturing graphs.
+#   --max-num-seqs       a real ceiling: at fp8 this 7B costs ~28KB of KV per
+#                        token, so ~7GiB of cache is ~250k tokens -- roughly 24
+#                        concurrent long sequences on a 24GB card. Raise it with
+#                        the card, not by wishing.
 #   --data-parallel-size independent replicas, NOT --tensor-parallel-size: a 7B
 #                        fits one GPU with room for KV, so TP would only add an
 #                        all-reduce per layer to buy single-request latency,
@@ -86,14 +115,30 @@ agent:
   on_nonconvergence: reject
 
 budget:
-  # Reconstruction guard: min(budgets) == 8192 == the largest role max_tokens, so
-  # sweep.py's per-role clamp is a no-op and every budget is a genuine prefix of
-  # the 32768 pass. Lower any budget below 8192 and the guard trips, silently
-  # (but loudly logged) falling back to three full re-solves.
-  budgets: [8192, 16384, 32768]
+  # MEASURED, not guessed. A 16-problem pilot on one 4090 (bf16 KV) put the
+  # per-attempt total at: median 2329 tokens, p75 10622, p90 13522, max 13667.
+  # Against that distribution a budget only binds this often:
+  #
+  #     B=1024 -> 94%   B=2048 -> 62%   B=4096 -> 38%
+  #     B=8192 -> 25%   B=16384 -> 0%   B=32768 -> 0%
+  #
+  # The old grid [8192, 16384, 32768] therefore measured almost nothing: p went
+  # 0.75 -> 0.79 -> 0.79 and EVERY solved problem landed at b_star=8192, i.e. a
+  # constant label with no signal for the oracle to predict. A grid has to
+  # bracket the distribution it is measuring.
+  budgets: [1024, 2048, 4096, 8192]
   n_samples: 3                       # do NOT drop to 2 -- see below
   success_threshold: 0.5
-  single_pass_reconstruct: true      # one pass instead of three
+  # Deliberately OFF, and the guard would force it off anyway: reconstruction is
+  # exact only while min(budgets) >= every role's max_tokens, and 1024 < 8192.
+  # That is not a loss here. Reconstruction paid off when the budgets were huge
+  # and each pass regenerated the same ~15k tokens; at these sizes the small-B
+  # passes truncate early and cost little, so four independent passes come to
+  # roughly 2x one 32768 pass -- while keeping the prover free to think up to
+  # 8192 when a problem needs it, which is the behaviour being measured.
+  # Raising the role caps to 1024 would restore reconstruction, but it would
+  # also cap every prover call at 1024 and silently redefine the agent.
+  single_pass_reconstruct: false
   # Problems in flight at round 1 = batch_size * n_samples = 192. Also the
   # checkpoint granularity: records reach disk only after a whole batch, so this
   # trades crash exposure against keeping the replicas fed. Rule of thumb:
