@@ -1,0 +1,23 @@
+{
+  "note": "Ablations scored with the exact same methodology as the pipeline's cv_score (LeaveOneGroupOut CV grouped by problem id, LogisticRegression, one row per (problem, budget) with log(budget) appended). Not written by `frugalprover train`/`report` -- computed separately against this run's problems.jsonl/budgets.jsonl, reusing ClassificationOracle directly.",
+  "cv_metric": "auc",
+  "chance": 0.5,
+  "length_only": {
+    "features": ["surface.char_len"],
+    "cv_score": 0.7338,
+    "n_problems": 276,
+    "n_rows": 1104
+  },
+  "surface_subject_no_activations": {
+    "features": ["surface", "subject"],
+    "cv_score": 0.8043,
+    "n_problems": 276,
+    "n_rows": 1104
+  },
+  "full_model": {
+    "features": ["surface", "subject", "activations(L16_mean)"],
+    "cv_score": 0.7996,
+    "source": "metrics.json"
+  },
+  "verdict": "Activations do NOT beat the surface+subject baseline (0.7996 < 0.8043). Per CLAUDE.md's stated bar ('Activations must beat train.features=[surface,subject] or there is no result'), this run does not show an activations result -- consistent with the flat, humpless layer_sweep.png curve (0.785-0.800 across all 29 layers, no structure)."
+}

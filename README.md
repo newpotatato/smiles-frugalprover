@@ -208,10 +208,13 @@ of `agent.verifiers` is a `ModelSpec` (client + model + decoding params), so the
 verifiers can be a heterogeneous trio that isn't fooled by the same bad step.
 Model backends: `client: mock` runs the whole loop on CPU with no models or
 network; `client: hf` runs a local `transformers` model (same-model roles share
-one loaded copy). `client: openai` (a vLLM-served, OpenAI-compatible endpoint) is
-registered but still raises. The loop is **batched across tasks** — every attempt advances in
+one loaded copy); `client: openai` talks to a vLLM-served, OpenAI-compatible
+endpoint and needs no torch locally. The loop is **batched across tasks** — every attempt advances in
 lockstep and each role's call spans the whole active set — so a batching backend
-processes one big call per step, not one prompt at a time.
+processes one big call per step, not one prompt at a time. That is why the
+`openai`/vLLM path is one to two orders of magnitude faster than `hf` for
+labeling: vLLM batches continuously across every in-flight request, where `hf`
+runs fixed-size waves that each wait for their slowest sequence.
 
 See [src/frugalprover/agent/README.md](src/frugalprover/agent/README.md) for the
 internals.
@@ -230,10 +233,14 @@ Writes one row per problem to `data/<run_name>/prove.jsonl`:
 `{id, status, accepted, rounds, flaws, tokens, candidate}`. `--max-problems N`
 caps the input. To run real models locally, swap in
 [configs/agent/DeepSeek_R1_Distill_Qwen_7B.yaml](configs/agent/DeepSeek_R1_Distill_Qwen_7B.yaml) (the `hf` backend, needs a GPU).
-The intended large-scale config is
-[configs/agent/qwen_trio.yaml](configs/agent/qwen_trio.yaml) — an R1-Distill
-prover/corrector with a `Qwen3-32B + R1-Distill-32B + gpt-oss-20b` verifier trio;
-it fails fast today because the `openai` backend is still a stub.
+For a real labeling run, use
+[configs/agent/DeepSeek_R1_Distill_Qwen_7B_vllm.yaml](configs/agent/DeepSeek_R1_Distill_Qwen_7B_vllm.yaml)
+— the same model through a vLLM server (`pip install -e ".[openai]"`, and see the
+fragment's header for the `vllm serve` command). `docs/hf_agent.ipynb` runs that
+path end to end with a pilot that sizes the run first.
+[configs/agent/qwen_trio.yaml](configs/agent/qwen_trio.yaml) is the larger
+intended config — an R1-Distill prover/corrector with a
+`Qwen3-32B + R1-Distill-32B + gpt-oss-20b` verifier trio.
 
 ### Running it — Python
 

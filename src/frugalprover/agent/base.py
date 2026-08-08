@@ -9,7 +9,7 @@ knowing about the other.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from frugalprover.common.records import ProblemRecord
@@ -35,6 +35,79 @@ class Sample:
 
     text: str
     tokens: int
+
+
+@dataclass
+class RoundTrace:
+    """One verify(+repair) round of an attempt, as it actually happened.
+
+    `corrector_tokens is None` means no repair ran after this round -- the round
+    cap was reached, or the attempt was already over budget. Either way it cannot
+    run at a *smaller* budget either, so the absence needs no further flag.
+    """
+
+    verifier_tokens: int
+    accepted: bool
+    corrector_tokens: int | None = None
+    candidate_after: str | None = None
+
+
+@dataclass
+class AttemptTrace:
+    """One attempt's trajectory, replayable at any budget it ran at or below.
+
+    The premise is that a smaller budget yields a *prefix* of a larger one: the
+    same calls, in the same order, stopping sooner. That holds only while the
+    per-call caps don't change with the budget, so the caller owns that guard
+    (see oracle/budget/sweep.py). Given it, one expensive pass at the largest
+    budget answers the whole sweep, instead of re-solving from scratch per budget.
+    """
+
+    prover_tokens: int
+    candidate_0: str
+    rounds: list[RoundTrace] = field(default_factory=list)
+
+    def replay(self, cap: int | None) -> Sample:
+        """The Sample this attempt would have produced under a cap of `cap`.
+
+        Mirrors the stop conditions in verify_repair.py exactly: finalize before
+        an audit once the running total reaches the cap, stop on acceptance, and
+        stop when no repair followed.
+        """
+        tokens, candidate = self.prover_tokens, self.candidate_0
+        for r in self.rounds:
+            if cap is not None and tokens >= cap:
+                break                       # spent its budget before this audit
+            tokens += r.verifier_tokens
+            if r.accepted:
+                break
+            if r.corrector_tokens is None:
+                break                       # no repair followed at any budget
+            if cap is not None and tokens >= cap:
+                break                       # audit consumed the rest of the cap
+            tokens += r.corrector_tokens
+            candidate = r.candidate_after
+        return Sample(text=candidate, tokens=tokens)
+
+
+@runtime_checkable
+class TracingAgent(Protocol):
+    """Optional capability: solve once, return replayable trajectories.
+
+    An agent implements this when its behaviour under a smaller token cap is a
+    prefix of its behaviour under a larger one. Stage 2 uses it to reconstruct a
+    whole budget sweep from a single pass; agents that don't implement it are
+    swept the ordinary way, one full pass per budget.
+    """
+
+    def solve_batch_traced(
+        self,
+        problems: list[ProblemRecord],
+        max_new_tokens: int,
+        n_samples: int,
+    ) -> list[list[AttemptTrace]]:
+        """Like `solve_batch`, but returns traces instead of finished Samples."""
+        ...
 
 
 @runtime_checkable

@@ -6,6 +6,9 @@ implements one method.
 """
 from __future__ import annotations
 
+import random
+import time
+
 from frugalprover.common.config import AgentConfig, BudgetConfig, PipelineConfig
 from frugalprover.common.io import (
     append_jsonl,
@@ -65,6 +68,9 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
     failure mode the whole append-and-flush design exists to prevent.
     """
     bc = cfg.budget
+    # Started before anything loads: weight loading and a cold model download are
+    # part of the wall clock the caller is budgeting.
+    t0 = time.perf_counter()
     problems_path = cfg.data_path(bc.problems)
     out = cfg.data_path(bc.output)
 
@@ -75,6 +81,14 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
         )
 
     problems = [ProblemRecord.from_dict(d) for d in read_jsonl(problems_path)]
+    if bc.shuffle:
+        # Before max_problems (so both truncation paths are covered) and before
+        # the resume filter (so the permutation depends only on the file and the
+        # seed -- shuffling `todo` instead would make the order depend on how
+        # many times the run crashed).
+        random.Random(bc.seed).shuffle(problems)
+        log.info("shuffled %d problems with budget.seed=%d -- a truncated run stays "
+                 "representative across subjects and levels", len(problems), bc.seed)
     if bc.max_problems is not None:
         problems = problems[: bc.max_problems]
 
@@ -92,23 +106,55 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
              len(todo), bc.estimator, agent_desc, bc.budgets, bc.n_samples)
 
     estimator.setup()
+    n_labeled = 0
+    stopped_early = False
+    batch_s: float | None = None  # EMA of per-batch wall time, for the deadline check
     try:
-        starts = range(0, len(todo), bc.batch_size)
+        starts = list(range(0, len(todo), bc.batch_size))
         for i in track(starts, description="labeling", total=len(starts)):
+            if _should_stop(bc.time_budget_s, t0, batch_s):
+                stopped_early = True
+                break
             batch = todo[i : i + bc.batch_size]
-            for record in estimator.estimate_batch(batch):
-                append_jsonl(out, record.to_dict())
+            t_batch = time.perf_counter()
+            try:
+                for record in estimator.estimate_batch(batch):
+                    append_jsonl(out, record.to_dict())
+                    n_labeled += 1
+            except Exception:
+                if not bc.continue_on_error:
+                    raise
+                log.exception("batch at offset %d failed -- skipping %d problem(s). "
+                              "Rerun to retry them.", i, len(batch))
+                continue
+            dt = time.perf_counter() - t_batch
+            batch_s = dt if batch_s is None else 0.7 * batch_s + 0.3 * dt
     finally:
         estimator.teardown()
+
+    if not out.exists():
+        # Reachable when a time budget expires before the first batch finishes
+        # (a deadline shorter than model loading, or a resumed run whose window
+        # has already passed). Nothing to sort or summarize -- say so plainly
+        # rather than dying on the missing file.
+        log.warning("no batch completed before the run stopped -- nothing written to %s", out)
+        return []
 
     sort_jsonl_by_id(out)
     records = [BudgetRecord.from_dict(d) for d in read_jsonl(out)]
     stats = describe(records)
+    elapsed = time.perf_counter() - t0
     meta = {
         "artifact": "budgets",
         "produced_by": f"frugalprover.oracle.budget:{type(estimator).__name__}",
         "config": bc.__dict__,
         "n_records": len(records),
+        "elapsed_s": round(elapsed, 1),
+        "n_labeled_this_run": n_labeled,
+        "n_remaining": max(0, len(todo) - n_labeled),
+        "stopped_early": stopped_early,
+        "shuffled": bc.shuffle,
+        "order_seed": bc.seed if bc.shuffle else None,
         **stats,
     }
     # For an agent-driven sweep, record which agent actually produced the labels
@@ -124,7 +170,33 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
     log.info("  b_star distribution: %s", stats["b_star_distribution"])
     if stats["single_pass"]:
         log.info("  single-budget run: usable for classification, not for regression")
+    if stopped_early:
+        log.warning("  stopped early: %d of %d problems still unlabeled -- rerun the same "
+                    "command to continue where this left off",
+                    len(todo) - n_labeled, len(todo))
     return records
+
+
+def _should_stop(limit: float | None, t0: float, batch_s: float | None) -> bool:
+    """Whether to stop before starting another batch.
+
+    The predictive arm is the one that buys coverage: a batch started three
+    minutes before the deadline finishes after it, wasting both those minutes and
+    the batch. `batch_s` is an EMA, so it self-calibrates to the hardware.
+    """
+    if limit is None:
+        return False
+    elapsed = time.perf_counter() - t0
+    if elapsed >= limit:
+        log.warning("time budget %.0fs reached after %.0fs -- stopping between batches",
+                    limit, elapsed)
+        return True
+    if batch_s is not None and elapsed + batch_s > limit:
+        log.warning("time budget %.0fs: %.0fs elapsed and the next batch needs ~%.0fs -- "
+                    "stopping now rather than starting one that would be cut off",
+                    limit, elapsed, batch_s)
+        return True
+    return False
 
 
 def describe(records: list[BudgetRecord]) -> dict:
