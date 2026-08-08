@@ -1,0 +1,165 @@
+{
+  "created_at": "2026-07-22T10:07:06+00:00",
+  "git_sha": "8cc5010",
+  "artifact": "hidden_states",
+  "produced_by": "frugalprover.oracle.states:TransformerHiddenStateExtractor",
+  "config": {
+    "extractor": "transformer",
+    "model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+    "prompt_template": "{problem}",
+    "all_layers": true,
+    "all_layers_pooling": "mean",
+    "batch_size": 8,
+    "max_input_tokens": 512,
+    "dtype": "float16",
+    "device": "cuda",
+    "problems": "problems.jsonl",
+    "output": "hidden_states.parquet",
+    "synthetic_layers": 4,
+    "synthetic_hidden_size": 32,
+    "synthetic_signal_layer": 1,
+    "synthetic_signal_strength": 2.5,
+    "synthetic_seed": 0
+  },
+  "model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+  "hidden_size": 1536,
+  "n_hidden_states": 29,
+  "num_hidden_layers": 28,
+  "prompt_template": "{problem}",
+  "max_input_tokens": 512,
+  "dtype": "float16",
+  "device": "cuda",
+  "pooled_columns": {
+    "L0_mean": {
+      "layer": 0,
+      "pooling": "mean"
+    },
+    "L1_mean": {
+      "layer": 1,
+      "pooling": "mean"
+    },
+    "L2_mean": {
+      "layer": 2,
+      "pooling": "mean"
+    },
+    "L3_mean": {
+      "layer": 3,
+      "pooling": "mean"
+    },
+    "L4_mean": {
+      "layer": 4,
+      "pooling": "mean"
+    },
+    "L5_mean": {
+      "layer": 5,
+      "pooling": "mean"
+    },
+    "L6_mean": {
+      "layer": 6,
+      "pooling": "mean"
+    },
+    "L7_mean": {
+      "layer": 7,
+      "pooling": "mean"
+    },
+    "L8_mean": {
+      "layer": 8,
+      "pooling": "mean"
+    },
+    "L9_mean": {
+      "layer": 9,
+      "pooling": "mean"
+    },
+    "L10_mean": {
+      "layer": 10,
+      "pooling": "mean"
+    },
+    "L11_mean": {
+      "layer": 11,
+      "pooling": "mean"
+    },
+    "L12_mean": {
+      "layer": 12,
+      "pooling": "mean"
+    },
+    "L13_mean": {
+      "layer": 13,
+      "pooling": "mean"
+    },
+    "L14_mean": {
+      "layer": 14,
+      "pooling": "mean"
+    },
+    "L15_mean": {
+      "layer": 15,
+      "pooling": "mean"
+    },
+    "L16_mean": {
+      "layer": 16,
+      "pooling": "mean"
+    },
+    "L17_mean": {
+      "layer": 17,
+      "pooling": "mean"
+    },
+    "L18_mean": {
+      "layer": 18,
+      "pooling": "mean"
+    },
+    "L19_mean": {
+      "layer": 19,
+      "pooling": "mean"
+    },
+    "L20_mean": {
+      "layer": 20,
+      "pooling": "mean"
+    },
+    "L21_mean": {
+      "layer": 21,
+      "pooling": "mean"
+    },
+    "L22_mean": {
+      "layer": 22,
+      "pooling": "mean"
+    },
+    "L23_mean": {
+      "layer": 23,
+      "pooling": "mean"
+    },
+    "L24_mean": {
+      "layer": 24,
+      "pooling": "mean"
+    },
+    "L25_mean": {
+      "layer": 25,
+      "pooling": "mean"
+    },
+    "L26_mean": {
+      "layer": 26,
+      "pooling": "mean"
+    },
+    "L27_mean": {
+      "layer": 27,
+      "pooling": "mean"
+    },
+    "L28_mean": {
+      "layer": 28,
+      "pooling": "mean"
+    }
+  },
+  "geometry_columns": {
+    "L14_effective_rank": {
+      "layer": 14,
+      "metric": "effective_rank"
+    },
+    "L14_l2_norm": {
+      "layer": 14,
+      "metric": "l2_norm"
+    },
+    "L28_anisotropy": {
+      "layer": 28,
+      "metric": "anisotropy"
+    }
+  },
+  "n_records": 100
+}

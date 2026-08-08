@@ -1,0 +1,9 @@
+# Budget labeling with DeepSeek-R1-Distill-Qwen-7B as the solver.
+# Note: the labels in data/deepseek_r1_qwen7b/budgets.jsonl were produced
+# out-of-band (b_star = completion_tokens under a 2048 cap, no answer grading),
+# not by this pipeline's `sweep` estimator -- which is still unimplemented.
+# This fragment records the solver that generated them.
+#   frugalprover run-all -c configs/base.yaml \
+#       -c configs/budget/deepseek_r1_distill_qwen_7b.yaml ...
+budget:
+  agent: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
