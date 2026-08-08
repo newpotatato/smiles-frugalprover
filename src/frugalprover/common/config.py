@@ -42,10 +42,39 @@ SUBJECTS = [
 
 POOLINGS = ["mean", "sum", "std", "max", "last"]
 METRICS = ["l2_norm", "mean_token_norm", "token_norm_std", "anisotropy", "effective_rank"]
+#: bitsandbytes load modes for the `hf` agent client (see ModelSpec.quantization).
+QUANTIZATIONS = ["none", "8bit", "4bit"]
 
 SOLVE_PROMPT = (
     "Problem:\n{problem}\n\n"
     "Solve step by step, then give the final answer in \\boxed{{}}.\n\nSolution:"
+)
+
+#: Prompts for the verify-repair agent's three roles. They are ordinary config
+#: (overridable per run), but the *shapes* matter: the verifier is asked for a
+#: verdict AND specific diagnosed flaws, because those flaws are the only thing
+#: the corrector gets -- pass/fail alone can't be repaired against.
+PROVE_PROMPT = (
+    "Problem:\n{problem}\n\n"
+    "Write a complete, rigorous solution. End with the final answer in "
+    "\\boxed{{}}.\n\nSolution:"
+)
+VERIFY_PROMPT = (
+    "You are a skeptical proof-checker. Audit the candidate solution against the "
+    "problem. Look for wrong steps, unjustified claims, and arithmetic errors.\n\n"
+    "Problem:\n{problem}\n\n"
+    "Candidate solution:\n{candidate}\n\n"
+    "Respond in exactly this form:\n"
+    "VERDICT: ACCEPT or REJECT\n"
+    "FLAWS:\n- <one specific flaw per line, or 'none' if you accept>\n"
+)
+REPAIR_PROMPT = (
+    "Your previous solution was audited and found flawed. Produce a corrected, "
+    "complete solution that fixes every flaw below. End with the final answer in "
+    "\\boxed{{}}.\n\n"
+    "Problem:\n{problem}\n\n"
+    "Previous solution:\n{candidate}\n\n"
+    "Flaws to fix:\n{flaws}\n\nCorrected solution:"
 )
 
 
@@ -177,6 +206,60 @@ class ReportConfig:
 
 
 @dataclass
+class ModelSpec:
+    """How one role (prover / verifier / corrector) reaches a model.
+
+    ``mock`` runs on CPU with no weights; ``hf`` runs a local
+    ``transformers.generate`` model (see agent/model.py:HFClient); ``openai`` (a
+    vLLM-served, OpenAI-compatible endpoint) is registered but still raises.
+    """
+
+    client: str = "mock"           # mock | openai | hf
+    model: str = "mock"            # repo id / served-model-name
+    temperature: float = 0.7
+    top_p: float = 0.9
+    max_tokens: int = 2048         # per-call generation cap for this role
+    base_url: str | None = None    # openai-compatible endpoint
+    api_key_env: str | None = None  # env var holding the key, never the key itself
+    #: hf only: prompts per model.generate call, bounding peak GPU memory when the
+    #: loop's active set is large. Ignored by mock/openai.
+    max_batch_size: int = 8
+    #: hf only: load the weights quantized via bitsandbytes (CUDA only), trading
+    #: accuracy for memory -- 4bit puts a 7B in ~5GB against ~15GB at bf16, which
+    #: is the difference between fitting a 16GB card and not. Roles sharing a
+    #: model must agree: the loaded-weight cache keys on (model, quantization),
+    #: so a mismatch loads a second copy and defeats the sharing.
+    quantization: str = "none"     # none | 8bit | 4bit
+
+
+@dataclass
+class AgentConfig:
+    """The solving agent: prover -> k verifiers -> corrector loop.
+
+    `type: single` is a one-shot prover baseline; `verify_repair` runs the full
+    audit-and-repair loop. The three control-flow dials -- `aggregation`,
+    `independence`, `on_nonconvergence` -- are the architecture, not decoration;
+    the defaults (unanimity / blind / reject) are the safety-first corner.
+    """
+
+    type: str = "verify_repair"                 # single | verify_repair
+    prover: ModelSpec = field(default_factory=ModelSpec)
+    corrector: ModelSpec = field(default_factory=ModelSpec)
+    #: The k verifiers. Default is a k=3 ensemble; make them heterogeneous
+    #: (different models) so the three don't get fooled by the same bad step.
+    verifiers: list[ModelSpec] = field(
+        default_factory=lambda: [ModelSpec(), ModelSpec(), ModelSpec()]
+    )
+    max_rounds: int = 4
+    aggregation: str = "unanimity"              # unanimity | majority
+    independence: str = "blind"                 # blind | debate
+    on_nonconvergence: str = "reject"           # reject | flag
+    prover_prompt: str = PROVE_PROMPT
+    verifier_prompt: str = VERIFY_PROMPT
+    corrector_prompt: str = REPAIR_PROMPT
+
+
+@dataclass
 class PipelineConfig:
     run_name: str = "default"
     seed: int = 0
@@ -187,6 +270,7 @@ class PipelineConfig:
     extract: ExtractConfig = field(default_factory=ExtractConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
+    agent: AgentConfig = field(default_factory=AgentConfig)
 
     # -- path helpers: stage configs hold bare filenames, resolved against the run
 
@@ -376,6 +460,22 @@ def _validate(cfg: PipelineConfig) -> None:
             f"budget.success_threshold must be in (0, 1], got {cfg.budget.success_threshold}"
         )
 
+    a = cfg.agent
+    check(a.type, ["single", "verify_repair"], "agent.type")
+    check(a.aggregation, ["unanimity", "majority"], "agent.aggregation")
+    check(a.independence, ["blind", "debate"], "agent.independence")
+    check(a.on_nonconvergence, ["reject", "flag"], "agent.on_nonconvergence")
+    for role, spec in [("prover", a.prover), ("corrector", a.corrector)]:
+        check(spec.client, ["mock", "openai", "hf"], f"agent.{role}.client")
+        check(spec.quantization, QUANTIZATIONS, f"agent.{role}.quantization")
+    for i, spec in enumerate(a.verifiers):
+        check(spec.client, ["mock", "openai", "hf"], f"agent.verifiers[{i}].client")
+        check(spec.quantization, QUANTIZATIONS, f"agent.verifiers[{i}].quantization")
+    if a.max_rounds < 1:
+        raise ValueError(f"agent.max_rounds must be >= 1, got {a.max_rounds}")
+    if a.type == "verify_repair" and len(a.verifiers) < 1:
+        raise ValueError("agent.verifiers is empty — the loop needs at least one verifier.")
+
 
 _NESTED[PipelineConfig] = {
     "sample": SampleConfig,
@@ -383,8 +483,16 @@ _NESTED[PipelineConfig] = {
     "extract": ExtractConfig,
     "train": TrainConfig,
     "report": ReportConfig,
+    "agent": AgentConfig,
+}
+_NESTED[AgentConfig] = {
+    "prover": ModelSpec,
+    "corrector": ModelSpec,
 }
 _NESTED_LISTS[ExtractConfig] = {
     "features": LayerPooling,
     "geometry": LayerMetric,
+}
+_NESTED_LISTS[AgentConfig] = {
+    "verifiers": ModelSpec,
 }

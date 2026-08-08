@@ -1,0 +1,19 @@
+# All-mock agent: runs the verify-repair loop on CPU with no models, no network.
+# Layer over any base to force the mock backend for a smoke run or demo:
+#
+#   frugalprover prove -c configs/base.yaml -c configs/agent/mock.yaml --problems <file>
+#
+# The default MockModelClient verifier accepts on the first audit, so the loop
+# terminates in one round -- enough to prove the wiring end-to-end.
+agent:
+  type: verify_repair
+  prover:    {client: mock, model: mock}
+  corrector: {client: mock, model: mock}
+  verifiers:
+    - {client: mock, model: mock}
+    - {client: mock, model: mock}
+    - {client: mock, model: mock}
+  max_rounds: 4
+  aggregation: unanimity
+  independence: blind
+  on_nonconvergence: reject

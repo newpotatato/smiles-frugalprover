@@ -156,6 +156,46 @@ def cmd_predict(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prove(args: argparse.Namespace) -> int:
+    """Run the solving agent (cfg.agent) on a problems file and record traces."""
+    from frugalprover.agent import build_agent
+    from frugalprover.common.io import read_jsonl, write_jsonl
+    from frugalprover.common.records import ProblemRecord
+
+    cfg = _resolve(args)
+    _add_run_log(cfg, args)
+    problems = [ProblemRecord.from_dict(d) for d in read_jsonl(args.problems)]
+    if args.max_problems:
+        problems = problems[: args.max_problems]
+
+    agent = build_agent(cfg.agent)
+    agent.setup()
+    try:
+        # Standalone use: no budget cap (0 = unlimited); one attempt per problem.
+        completions = agent.solve_batch(problems, max_new_tokens=0, n_samples=1)
+    finally:
+        agent.teardown()
+
+    rows = []
+    for problem, samples, traces in zip(problems, completions, agent.last_traces):
+        t = traces[0]
+        rows.append({
+            "id": problem.id,
+            "status": t["status"],
+            "accepted": t["accepted"],
+            "rounds": t["rounds"],
+            "flaws": t["flaws"],
+            "tokens": samples[0].tokens,
+            "candidate": samples[0].text,
+        })
+
+    out = cfg.data_path(args.out)
+    write_jsonl(out, rows, meta={"artifact": "prove", "config": cfg.to_dict()["agent"]})
+    accepted = sum(1 for r in rows if r["accepted"])
+    log.info("proved %d problems (%d accepted) -> %s", len(rows), accepted, out)
+    return 0
+
+
 def cmd_runs(args: argparse.Namespace) -> int:
     from frugalprover.oracle.reporting.runs import print_runs_table
 
@@ -242,6 +282,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hidden", required=True, help="hidden_states.parquet")
     p.add_argument("--out", default="predictions.jsonl")
     p.set_defaults(func=cmd_predict)
+
+    p = sub.add_parser("prove", help="run the solving agent (cfg.agent) on a problems file")
+    add_common(p)
+    p.add_argument("--problems", required=True, help="problems.jsonl (A1 records)")
+    p.add_argument("--out", default="prove.jsonl", help="where to write per-problem traces")
+    p.add_argument("--max-problems", type=int, default=None, help="cap the number of problems")
+    p.set_defaults(func=cmd_prove)
 
     p = sub.add_parser("runs", help="compare runs under results/")
     add_common(p)
