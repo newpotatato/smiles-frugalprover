@@ -136,3 +136,36 @@ agent:
   aggregation: unanimity         # unanimity | majority (the central safety dial)
   independence: blind            # blind (audit independently) | debate (see peers)
   on_nonconvergence: reject      # reject | flag
+  # `per_problem` seeds each attempt's decoding from the problem id, so the same
+  # problem follows the same trajectory under two different budgets. That is
+  # what makes an allocation A/B a paired comparison instead of two independent
+  # draws. Only the `openai` client honours it. Leave `none` for labeling runs.
+  seed_mode: none                # none | per_problem
+
+# ------------------------------------------------------------------ Allocate
+# H2: spend one fixed total budget across problems several ways and see which
+# allocation solves more. Not a pipeline stage -- it consumes a fitted oracle
+# and drives the agent, so it runs after `train`:
+#   frugalprover allocate -c configs/base.yaml -c configs/allocate/h2_matched_compute.yaml
+#
+# Every arm gets B_tot = b_bar * n_problems tokens; only the split differs.
+# See src/frugalprover/allocate/policies.py for what each arm does.
+allocate:
+  policies: [uniform, length, oracle_bhat, oracle_triage]
+  grid: [1024, 2048, 4096, 8192]  # must be the budgets the oracle was fitted on
+  b_bar: 2048                     # mean tokens per problem; keep it ON the grid
+  n_samples: 1
+  oracle: oracle.joblib           # resolved against results/ then data/
+  hidden_states: hidden_states.parquet
+  triage_threshold: 0.3           # oracle_triage abstains below this p at max(grid)
+  baseline: uniform               # what the paired tests compare against
+  problems: problems.jsonl
+  exclude_labeled: null           # a budgets.jsonl whose ids to drop (the oracle saw them)
+  max_problems: null
+  chunk_size: 25                  # every arm runs a chunk before the next chunk starts
+  time_budget_s: null
+  shuffle: true
+  seed: 0
+  continue_on_error: false
+  output: alloc.jsonl             # per (arm, problem) rows, into data/<run>/
+  report: allocation.json         # the scored comparison, into results/<run>/

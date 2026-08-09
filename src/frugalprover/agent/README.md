@@ -61,14 +61,38 @@ protocol return — it never reaches into agent internals like `last_traces`
 the only thing that calls an agent, and it calls it through `SolverAgent` — so
 swapping solvers never touches the labeling loop.
 
+`allocate/run.py` is the second caller, and it uses the same one method:
+`solve_batch(problems, max_new_tokens=[B₁, B₂, …], n_samples=n)` — a list of one
+cap per problem instead of one for the batch. That list is the *entire* surface
+through which the Budget Oracle reaches the agent. The agent is not told which
+allocation policy chose the numbers, or that an oracle exists; attempts on
+different budgets ride in the same batched calls and differ only in their own
+ceiling.
+
 Nothing in `oracle/` imports from `agent/`, and nothing in `agent/` imports from
-`oracle/` — the dependency runs one way.
+`oracle/` — the dependency runs one way. `allocate/` imports both, which is why
+it is a package of its own rather than a module inside either.
 
 ## The one constraint that matters
 
 Whatever the agent does internally, an attempt's **total generated tokens must
-respect `max_new_tokens`**. An agent that makes three model calls of 512 tokens
-each while being labeled at "budget 512" makes the budget axis meaningless, and
-every number downstream inherits that. `VerifyRepairAgent` checks the cap at each
-round boundary: once an attempt's running token total reaches it, the attempt is
-finalized and gets no further generation.
+respect its own `max_new_tokens`**. An agent that makes three model calls of 512
+tokens each while being labeled at "budget 512" makes the budget axis
+meaningless, and every number downstream inherits that. `VerifyRepairAgent`
+checks the cap at each round boundary: once an attempt's running token total
+reaches it, the attempt is finalized and gets no further generation.
+
+The round-boundary check is only half of it. Each *call* is also capped at that
+attempt's budget (`_Role._generate` lowers `max_tokens` per item), because
+otherwise the prover's first generation would emit its full configured
+`max_tokens` no matter how small the budget was — the loop would notice
+afterwards, having already spent the tokens. Stage 2 does the same thing per
+pass with `TokenSweepEstimator._clamped`; per-problem allocation needs it per
+attempt.
+
+`agent.seed_mode: per_problem` derives each attempt's decoding seed from the
+problem id. Two runs of the same problem at different budgets then follow the
+same trajectory until the smaller cap truncates it, which is what makes an
+allocation A/B a paired comparison rather than two independent draws. Only the
+`openai` client honours it — `transformers` seeds a whole batch, not a sequence,
+and `HFClient` says so rather than pretending.

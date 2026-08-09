@@ -155,25 +155,33 @@ Files of either shape concatenate freely as long as `n_samples` and
 `success_threshold` agree. A problem missing from some budgets is fine —
 classification just gets fewer rows for it.
 
-### Implementing Stage 2
+### How Stage 2 produces this
 
-`TokenSweepEstimator.estimate_batch` raises `NotImplementedError`. Its docstring
-is the spec. Summary:
+`TokenSweepEstimator.estimate_batch` is implemented (`oracle/budget/sweep.py`)
+and has run at scale — `data/label5h/` is 276 problems labeled this way. What it
+does, for each batch:
 
-1. Render the prompt from `budget.prompt_template`.
-2. For each budget `B` ascending, sample `n_samples` completions with
-   `max_new_tokens=B`. Decode **only the new tokens** — leaving the prompt in
-   means a gold answer appearing there gets graded as the model's own output.
-3. Grade each with `frugalprover.common.grading.grade(text, problem.answer)`.
-4. Build the record with `BudgetRecord.from_counts(...)`, which derives `p`, the
+1. For each budget `B` ascending, call the agent's `solve_batch` with
+   `max_new_tokens=B` and `n_samples` samples, under a context manager that
+   temporarily lowers every role's per-call `max_tokens` to `B`. Without that
+   clamp the prover emits its full configured `max_tokens` regardless of `B` and
+   the budget axis measures nothing.
+2. Grade each completion with `frugalprover.common.grading.grade`.
+3. Build the record with `BudgetRecord.from_counts(...)`, which derives `p`, the
    Wilson intervals, and `b_star` — so the τ rule lives in one place.
 
-The runner already handles resume, per-record flushing, ordering and the
-sidecar. You write one method.
+With `budget.single_pass_reconstruct` it instead runs one pass at `max(budgets)`
+and replays each attempt's trajectory at the smaller ones. That is exact only
+while the per-role clamp never binds, so it is guarded and falls back loudly
+rather than assuming.
 
-Two things that silently corrupt labels: **batch by budget, not by problem**
-(mixing budgets in one `generate` call pads everything to the largest), and
-**check the tokenizer's padding side** before slicing off the prompt.
+The runner handles resume, per-record flushing, ordering, the wall-clock stop
+and the sidecar; an estimator implements one method.
+
+Two things that silently corrupt labels: **batch by budget, not by problem** (a
+`transformers` backend mixing budgets in one `generate` call pads everything to
+the largest — `HFClient` groups by cap for exactly this reason), and **check the
+tokenizer's padding side** before slicing off the prompt.
 
 ---
 
@@ -275,6 +283,47 @@ what actually produced the model.
 
 `frugalprover runs` tabulates every run alongside the config keys that differ
 between them.
+
+---
+
+## A6 — `alloc.jsonl` + `allocation.json`
+
+Produced by `frugalprover allocate` (H2). **Not a pipeline stage:** it consumes
+A4 and A1 and produces its own terminal artifact, so nothing downstream reads
+it. One row per **(arm, problem)** — not per problem, which is why it carries
+its own `key`.
+
+| Column | Type | Required | Meaning |
+|---|---|---|---|
+| `key` | str | yes | `"<arm>::<id>"`. The resume key; `id` alone collides across arms. |
+| `id` | str | yes | A1 join key. |
+| `arm` | str | yes | The allocation policy that chose this row's cap. |
+| `cap` | int | yes | Tokens this policy allotted. **0 means the policy abstained** — no generation ran, and the row is scored as unsolved. |
+| `tokens` | int | yes | Tokens actually generated, summed over prover + verifiers + corrector. Usually well below `cap`: attempts stop early. |
+| `solved` | bool | yes | `grade(candidate, gold)` — the outcome being compared. |
+| `accepted` | bool/null | yes | Whether the verifiers passed it. `null` for a skipped or unverified row. Distinct from `solved`: the loop can accept a wrong proof, and that gap is the H3 safety metric. |
+| `status` | str | yes | `accepted` / `rejected` / `flagged` / `skipped`. |
+| `rounds` | int | yes | Verify-repair rounds run. |
+| `answer` | str/null | yes | Extracted boxed answer. |
+| `gold` | str | yes | A1's answer, copied so a row is gradeable on its own. |
+| `candidate` | str | yes | The final solution text. |
+
+`allocation.json` in `results/<run>/` is the scored comparison: per-arm
+summaries, paired McNemar counts against the baseline arm, and the abstention
+accounting. Two rules it applies, both load-bearing:
+
+- **Only ids every arm completed are scored.** A run stopped by `time_budget_s`
+  leaves the last chunk uneven, and comparing an arm that saw 300 problems
+  against one that saw 275 would credit the policy for the difference.
+- **Matched compute is judged on `tokens`, not `cap`.** Arms stop early at
+  different rates. `cap_budget` is what was allotted (identical by
+  construction); `tokens` is what was spent, and `solved_per_1m_tokens` is the
+  efficiency number.
+
+The same allocation policies run offline against A2's measured `p` —
+`python -m frugalprover.analysis.allocation_sim` — which is how an operating
+point is chosen before any GPU time is spent. Both callers import
+`allocate/policies.py`, so the simulation and the run cannot drift apart.
 
 ---
 

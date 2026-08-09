@@ -1,0 +1,96 @@
+# H2: does budget-aware allocation beat uniform at matched compute?
+# (docs/RESEARCH_PLAN.md Phase 2.) Layer onto base + a real agent:
+#
+#   frugalprover allocate -c configs/base.yaml \
+#       -c configs/agent/DeepSeek_R1_Distill_Qwen_7B_vllm_2gpu.yaml \
+#       -c configs/allocate/h2_matched_compute.yaml --run-name h2
+#
+# Prerequisites, in order:
+#   1. results/<oracle-run>/oracle.joblib  -- a fitted oracle
+#   2. data/<run>/hidden_states.parquet    -- for the SAME problems as below,
+#      extracted with the SAME extract settings the oracle was fitted with, or
+#      its saved PCA does not apply. Extract BEFORE starting vLLM: the server
+#      takes ~88% of the card and the extractor then has nowhere to load.
+#   3. exclude_labeled pointing at the budgets.jsonl the oracle trained on.
+#
+# WHAT IS BEING COMPARED. Four arms, one agent, one total budget
+# B_tot = b_bar * n_problems. `uniform` is the floor; `length` is the
+# deconfounder that makes the result a finding rather than a number (longer
+# problems plausibly need more tokens for reasons unrelated to reasoning
+# difficulty -- README, "Methodology notes"); the two `oracle_*` arms are the
+# hypothesis. Drop `length` last, never first.
+#
+# WHAT THE OFFLINE SIMULATION ALREADY SAYS. On the 276 labeled problems, with
+# out-of-fold predictions from surface+subject alone (no activations -- the
+# hidden states for label5h were lost with the pod that produced them), the
+# oracle arms beat uniform by ~10 problems out of 276 at the operating point
+# below, capturing ~21% of the gap to the perfect-information ceiling. So the
+# live run is not fishing: it is checking whether a simulated gain survives
+# contact with a real agent, at a b_bar chosen in advance rather than after.
+#
+# SIZING. Measured on the label5h run (data/label5h/budgets.jsonl.meta.json):
+# 8.54M generated tokens in 16686s = 512 tok/s on one 4090, ~1000 on two. A
+# capped attempt costs roughly 0.7x its cap, so ~1500 tokens at b_bar=2048, and
+# four arms come to ~6-8k tokens per problem. A 70-minute solving window at
+# 1000 tok/s is ~4.2M tokens, i.e. ~500 problems. max_problems is set above that
+# on purpose: time_budget_s truncates, and chunk interleaving keeps a truncated
+# run valid, so the run self-sizes instead of finishing early with idle GPUs.
+allocate:
+  policies: [uniform, length, oracle_greedy, oracle_triage]
+  grid: [1024, 2048, 4096, 8192]
+  # 2896, NOT 2048, and the difference is the whole experiment. Measured offline
+  # on the 276 labeled problems with out-of-fold predictions
+  # (`python -m frugalprover.analysis.allocation_sim`, expected problems solved
+  # of 276):
+  #
+  #     b_bar    uniform  o_greedy  o_triage   ceiling
+  #      1024      111.0     111.0     111.7     158.0
+  #      2048      147.0     144.7     145.3     204.0     <- on-grid: uniform wins
+  #      2896      163.6     173.0     174.0     216.7     <- widest margin
+  #      4096      189.3     191.0     190.7     216.7     <- on-grid: +1.7 only
+  #      8192      207.3     207.3     206.3     216.7
+  #
+  # ON-GRID b_bar IS A DEAD EXPERIMENT. At b_bar=2048 every arm can afford
+  # exactly 2048 for everyone, the grid is too coarse for a policy to trade one
+  # problem's step against another's, and the arms come out within noise of each
+  # other -- the live run would burn two hours to measure nothing, which is the
+  # same mistake the old [8192, 16384, 32768] budget grid made.
+  #
+  # Off-grid, the total does not divide evenly and a policy must decide *who*
+  # gets the spare step. That is where the oracle earns its keep, and it is also
+  # the realistic case: a real compute budget is not n times a power of two.
+  # Uniform can only break that tie at random, so it is scored over 12 seeds:
+  # 163.6 +- 2.3 (max 166.7) against 174.0 for triage -- a ~4 sigma gap, not a
+  # lucky draw.
+  b_bar: 2896
+  # One attempt per problem. Paired by seed across arms (see the agent fragment),
+  # so the arms differ only in their cap -- which buys the same variance
+  # reduction as greedy decoding without asking an R1-distill model to decode
+  # greedily, which its own model card warns produces repetition loops.
+  n_samples: 1
+  oracle: deepseek_r1_qwen7b_n3/oracle.joblib
+  hidden_states: hidden_states.parquet
+  # Swept offline at b_bar=2896 (`--sweep-triage`), expected solved / skipped:
+  #   0.1 -> 173.3 / 3    0.2 -> 173.3 / 5    0.3 -> 173.3 / 6
+  #   0.4 -> 174.0 / 11   0.5 -> 172.0 / 20
+  # Flat then falling: abstention pays until it starts declining problems that
+  # were winnable. 0.4 is the turn. Sweeping this live would cost one whole arm
+  # per value, which is why it is settled here.
+  triage_threshold: 0.4
+  baseline: uniform
+  problems: problems.jsonl
+  # The oracle was fitted on these ids. Leaving them in the eval set would
+  # measure memorisation, not prediction.
+  exclude_labeled: label5h/budgets.jsonl
+  max_problems: 600
+  # 25 problems x 4 arms per chunk. Also the checkpoint granularity and the
+  # granularity at which a truncated run stays balanced across arms, so it
+  # trades crash exposure against keeping the replicas fed. Raise it with the
+  # GPU count, cap it where a chunk exceeds ~5 minutes.
+  chunk_size: 25
+  time_budget_s: 4200            # 70 min, inside a 2h pod window with room to collect
+  shuffle: true
+  seed: 0
+  continue_on_error: true        # one transient HTTP failure shouldn't end the run
+  output: alloc.jsonl
+  report: allocation.json

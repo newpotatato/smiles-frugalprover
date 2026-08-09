@@ -201,7 +201,35 @@ is production-worthy.
 set; "matched compute" must count *all* agent tokens (prover + verifiers +
 corrector), not just prover output.
 
-*(Not yet implemented — conditional on H1 clearing.)*
+*Implemented:* `src/frugalprover/allocate/` (policies + runner, `frugalprover
+allocate`) and `analysis/allocation_sim.py` (the same policies scored offline
+against measured `pᵢ(B)`).
+
+**First offline result**, on the 276 `label5h` labels with out-of-fold
+predictions from surface+subject (activations unavailable locally — the hidden
+states were lost with the pod that produced them):
+
+| `b_bar` | uniform | `oracle_greedy` | `oracle_triage` | ceiling |
+|---|---|---|---|---|
+| 2048 (on-grid) | 147.0 | 144.7 | 145.3 | 204.0 |
+| 2896 | 163.6 ± 2.3 | 173.0 | **174.0** | 216.7 |
+| 4096 (on-grid) | 189.3 | 191.0 | 190.7 | 216.7 |
+
+Three things in that table are worth carrying forward. **The gain is real but
+small** — ~10 problems in 276, about 21% of the gap to the perfect-information
+ceiling, and the uniform figure is a mean over 12 tie-break seeds (±2.3), so it
+is roughly a 4σ effect rather than a lucky draw. **It lives off-grid**: when
+`B_tot` is exactly `n ×` a swept budget, every arm affords the same cap for
+everyone and there is nothing to reallocate — so an on-grid operating point
+makes the experiment unable to answer its own question. And **the ceiling is
+inflated by label noise**: at `b_bar = max(grid)` no allocation should beat
+uniform, yet the ceiling gains 9.3 problems purely by banking the sampling noise
+in n=3 curves, which bounds how much of the headroom elsewhere is the same
+artifact.
+
+**✅ Gate, restated for what we now know.** H2 is not "does allocation help" but
+"does allocation help *enough to matter*, against `length` as well as
+`uniform`". A 0.80-AUC predictor buys single-digit percentage points.
 
 ---
 

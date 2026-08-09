@@ -31,6 +31,21 @@ from frugalprover.common.logging import get_logger
 log = get_logger(__name__)
 
 
+def per_prompt(value, n: int, what: str) -> list:
+    """Broadcast a scalar to `n` items, or check a list is already that long.
+
+    `max_tokens` and `seeds` are both "one per prompt, or one for all"; doing the
+    widening once here keeps every client from re-deriving it, and turns a
+    length mismatch into an error at the call rather than a silently truncated
+    `zip` that would attach one problem's cap to another's prompt.
+    """
+    if isinstance(value, (list, tuple)):
+        if len(value) != n:
+            raise ValueError(f"{what}: expected {n} value(s) for {n} prompt(s), got {len(value)}")
+        return list(value)
+    return [value] * n
+
+
 @dataclass
 class _LoadedModel:
     """One (model, tokenizer) pair loaded once and shared across roles."""
@@ -62,12 +77,22 @@ class ModelClient(ABC):
         self,
         prompts: list[str],
         *,
-        max_tokens: int,
+        max_tokens: int | list[int],
         temperature: float,
         top_p: float,
         role: str = "prover",
+        seeds: list[int] | None = None,
     ) -> list[str]:
         """One completion per prompt, in input order.
+
+        `max_tokens` is either one cap for the batch or one per prompt (see
+        :func:`per_prompt`) -- the per-prompt form is what lets a single batched
+        call serve attempts on different budgets.
+
+        `seeds`, when given, is one decoding seed per prompt. A backend that
+        honours it makes sampling reproducible, so the same problem run twice at
+        different caps follows the same trajectory. Backends that can't are free
+        to ignore it.
 
         `role` is a hint identifying the caller (prover / verifier / corrector).
         Most backends ignore it; the mock uses it to pick a canned response.
@@ -113,10 +138,11 @@ class MockModelClient(ModelClient):
         self,
         prompts: list[str],
         *,
-        max_tokens: int,
+        max_tokens: int | list[int],
         temperature: float,
         top_p: float,
         role: str = "prover",
+        seeds: list[int] | None = None,
     ) -> list[str]:
         return [self._one(role, p) for p in prompts]
 
@@ -219,10 +245,11 @@ class OpenAIClient(ModelClient):
         self,
         prompts: list[str],
         *,
-        max_tokens: int,
+        max_tokens: int | list[int],
         temperature: float,
         top_p: float,
         role: str = "prover",
+        seeds: list[int] | None = None,
     ) -> list[str]:
         if self._client is None:
             raise RuntimeError("call setup() before generate()")
@@ -230,24 +257,33 @@ class OpenAIClient(ModelClient):
             return []
         import time
 
+        caps = per_prompt(max_tokens, len(prompts), "max_tokens")
+        seed_list = per_prompt(seeds, len(prompts), "seeds") if seeds is not None else None
         n_workers = max(1, min(self.spec.max_concurrency, len(prompts)))
-        log.info("[%s] generating %d prompt(s) via %s, %d worker(s), max_tokens=%d, decoding=%s",
-                 role, len(prompts), self.spec.base_url, n_workers, max_tokens,
-                 "sampling" if (temperature and temperature > 0) else "greedy")
+        distinct = sorted(set(caps))
+        log.info("[%s] generating %d prompt(s) via %s, %d worker(s), max_tokens=%s, decoding=%s%s",
+                 role, len(prompts), self.spec.base_url, n_workers,
+                 distinct[0] if len(distinct) == 1 else f"{distinct[0]}-{distinct[-1]}",
+                 "sampling" if (temperature and temperature > 0) else "greedy",
+                 " (seeded)" if seed_list is not None else "")
 
         t0 = time.perf_counter()
         progress = {"done": 0, "last": t0}
         lock = threading.Lock()
 
-        def one(prompt: str) -> str:
+        def one(prompt: str, cap: int, seed: int | None) -> str:
             kwargs = dict(
                 model=self.spec.model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
+                max_tokens=cap,
             )
-            # Deliberately no `seed`: n_samples sends identical prompts, and a
-            # per-request seed would return identical completions, collapsing the
-            # self-consistency baseline to a point mass.
+            # `seed` is opt-in and comes from the caller, never invented here.
+            # Left unset, n_samples sends identical prompts and a shared seed
+            # would return identical completions, collapsing the
+            # self-consistency baseline to a point mass -- so the loop derives a
+            # per-*sample* seed (agent/base.py:stable_seed) or passes none.
+            if seed is not None:
+                kwargs["seed"] = seed
             if temperature is not None and temperature > 0.0:
                 kwargs.update(temperature=temperature, top_p=top_p)
             else:
@@ -268,7 +304,10 @@ class OpenAIClient(ModelClient):
             return text
 
         with ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix=f"gen-{role}") as ex:
-            futures = [ex.submit(one, p) for p in prompts]
+            futures = [
+                ex.submit(one, p, caps[i], seed_list[i] if seed_list else None)
+                for i, p in enumerate(prompts)
+            ]
             # Indexing the futures list -- NOT as_completed -- is what preserves
             # input order. The loop zips these results positionally against its
             # attempts, so an out-of-order return would silently attach one
@@ -388,6 +427,7 @@ class HFClient(ModelClient):
         self.tokenizer = None
         self.device = None
         self._cached = False  # this client holds a reference in the class cache
+        self._warned_seed = False
 
     @property
     def _cache_key(self) -> str:
@@ -513,10 +553,11 @@ class HFClient(ModelClient):
         self,
         prompts: list[str],
         *,
-        max_tokens: int,
+        max_tokens: int | list[int],
         temperature: float,
         top_p: float,
         role: str = "prover",
+        seeds: list[int] | None = None,
     ) -> list[str]:
         if self.model is None:
             raise RuntimeError("call setup() before generate()")
@@ -524,19 +565,45 @@ class HFClient(ModelClient):
             return []
         import time
 
+        if seeds is not None and not self._warned_seed:
+            # `model.generate` seeds from the global torch RNG for the whole
+            # batch, so there is no per-sequence seed to honour here. Saying so
+            # once beats letting a caller believe hf and vllm runs are paired.
+            log.warning("[hf] per-prompt seeds are not supported by transformers "
+                        "generation; sampling stays unseeded for this client.")
+            self._warned_seed = True
+
+        caps = per_prompt(max_tokens, len(prompts), "max_tokens")
+        # One `generate` call emits the same number of new tokens for every row,
+        # so prompts on different budgets cannot share a call without the
+        # smallest cap truncating the rest. Group by cap, then chunk each group
+        # for memory -- allocation policies draw from a short grid, so this is a
+        # handful of groups, not one call per prompt.
+        groups: dict[int, list[int]] = {}
+        for i, cap in enumerate(caps):
+            groups.setdefault(cap, []).append(i)
+
         batch_size = max(1, self.spec.max_batch_size)
-        n_chunks = (len(prompts) + batch_size - 1) // batch_size
-        log.info("[%s] generating %d prompt(s) in %d chunk(s), max_new_tokens=%d, decoding=%s",
-                 role, len(prompts), n_chunks, max_tokens,
+        chunks = [
+            (cap, idx[start:start + batch_size])
+            for cap, idx in sorted(groups.items())
+            for start in range(0, len(idx), batch_size)
+        ]
+        log.info("[%s] generating %d prompt(s) in %d chunk(s) over %d cap group(s), "
+                 "max_new_tokens=%s, decoding=%s",
+                 role, len(prompts), len(chunks), len(groups), sorted(groups),
                  "sampling" if (temperature and temperature > 0) else "greedy")
-        out: list[str] = []
+
+        out: list[str] = [""] * len(prompts)
         t0 = time.perf_counter()
-        for ci, start in enumerate(range(0, len(prompts), batch_size), 1):
-            chunk = prompts[start:start + batch_size]
+        for ci, (cap, idx) in enumerate(chunks, 1):
             tc = time.perf_counter()
-            out.extend(self._generate_chunk(
-                chunk, max_tokens, temperature, top_p, role=role, chunk=(ci, n_chunks)))
-            log.info("[%s] chunk %d/%d finished in %.1fs", role, ci, n_chunks,
+            texts = self._generate_chunk(
+                [prompts[i] for i in idx], cap, temperature, top_p,
+                role=role, chunk=(ci, len(chunks)))
+            for i, text in zip(idx, texts):
+                out[i] = text
+            log.info("[%s] chunk %d/%d finished in %.1fs", role, ci, len(chunks),
                      time.perf_counter() - tc)
         log.info("[%s] done: %d completion(s) in %.1fs", role, len(out),
                  time.perf_counter() - t0)

@@ -1,0 +1,48 @@
+# The vLLM agent on TWO RTX 4090s, seeded for paired allocation arms.
+#
+# Layer it ON TOP of the single-GPU fragment, which stays authoritative for
+# everything else -- its header is the run book for the flags that are not
+# tuning (--served-model-name, --max-model-len >= 21k, --gpu-memory-utilization
+# 0.88, never --kv-cache-dtype fp8, never --reasoning-parser deepseek_r1):
+#
+#   frugalprover allocate -c configs/base.yaml \
+#       -c configs/agent/DeepSeek_R1_Distill_Qwen_7B_vllm.yaml \
+#       -c configs/agent/DeepSeek_R1_Distill_Qwen_7B_vllm_2gpu.yaml \
+#       -c configs/allocate/h2_matched_compute.yaml --run-name h2
+#
+# Server, with the second card:
+#
+#   vllm serve deepseek-ai/DeepSeek-R1-Distill-Qwen-7B \
+#     --served-model-name deepseek-r1-7b \
+#     --data-parallel-size 2 \          # two independent replicas, one per card
+#     --dtype bfloat16 \
+#     --gpu-memory-utilization 0.88 \
+#     --max-model-len 24576 \
+#     --max-num-seqs 24 \               # PER REPLICA: 48 concurrent sequences
+#     --enable-prefix-caching \
+#     --port 8000
+#   export VLLM_API_KEY=EMPTY
+#
+# WHY SEEDING. An allocation A/B asks what changing the *budget* does. Run
+# unseeded, two arms draw independent completions of the same problem, and the
+# per-problem difference is mostly sampling noise -- at one sample per problem
+# that noise swamps the effect at any n this window can afford. With
+# seed_mode: per_problem, vLLM is sent seed = crc32(problem id) on every
+# request, so the prover's completion is identical across arms up to the point
+# the smaller cap truncates it. The arms then differ only in their budget.
+#
+# Greedy decoding would achieve the same pairing, and is the obvious thing to
+# reach for -- but DeepSeek's guidance for the R1-Distill family is temperature
+# 0.5-0.7, and at 0 these models fall into repetition loops. The single-GPU
+# fragment's fp8 A/B measures what that costs here: degenerate output never
+# stops early, so it burns the entire cap -- 11x the tokens for garbage. Seeded
+# sampling at 0.6 keeps the labeling distribution AND the pairing.
+#
+# This fragment sets ONE key on purpose. Config layering replaces lists
+# wholesale rather than merging them (common/config.py, "Layering"), so
+# restating `verifiers:` here to tweak one field would silently discard the
+# whole verifier spec from the fragment below and fall back to `client: mock` --
+# a run that produces plausible output and measures nothing. The roles' 256
+# max_concurrency already covers 48 in-flight sequences across two replicas.
+agent:
+  seed_mode: per_problem

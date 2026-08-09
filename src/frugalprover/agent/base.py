@@ -6,13 +6,35 @@ grade, does not know what a budget sweep is, and does not decide when to stop.
 Keeping it that dumb is what lets Stage 2 sweep the budget over any agent -- a
 single model call, or a propose-verify-repair loop -- without either side
 knowing about the other.
+
+The budget may be *one cap for the whole batch* (what Stage 2 sweeps) or *one
+cap per problem* (what an allocation policy hands down -- see allocate/). Both
+go through the same argument, because to the agent they are the same thing: a
+ceiling on what an attempt may generate.
 """
 from __future__ import annotations
 
+import zlib
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from frugalprover.common.records import ProblemRecord
+
+
+def stable_seed(problem_id: str, sample_index: int = 0) -> int:
+    """A decoding seed derived from the problem id, stable across processes.
+
+    Two runs of the same problem under *different budgets* then sample the same
+    trajectory until the smaller cap truncates it, which is what makes an
+    allocation A/B a paired comparison instead of two independent draws. Python's
+    builtin `hash` is salted per process and would silently break that across
+    runs; crc32 is not.
+
+    `sample_index` is added in so `n_samples > 1` still draws distinct
+    completions -- without it every sample of a problem would be identical and
+    the self-consistency baseline would collapse to a point mass.
+    """
+    return (zlib.crc32(problem_id.encode("utf-8")) + sample_index) % (2 ** 31 - 1)
 
 
 @dataclass
@@ -103,7 +125,7 @@ class TracingAgent(Protocol):
     def solve_batch_traced(
         self,
         problems: list[ProblemRecord],
-        max_new_tokens: int,
+        max_new_tokens: int | list[int],
         n_samples: int,
     ) -> list[list[AttemptTrace]]:
         """Like `solve_batch`, but returns traces instead of finished Samples."""
@@ -120,7 +142,7 @@ class SolverAgent(Protocol):
     def solve_batch(
         self,
         problems: list[ProblemRecord],
-        max_new_tokens: int,
+        max_new_tokens: int | list[int],
         n_samples: int,
     ) -> list[list[Sample]]:
         """`n_samples` samples for each problem, in input order.
@@ -131,6 +153,11 @@ class SolverAgent(Protocol):
         `max_new_tokens` is the budget being measured. An agent that internally
         makes several model calls must account for its *total* generated tokens
         against this cap, otherwise the budget axis measures nothing.
+
+        It is either an int applying to every problem (0 = uncapped) or a list
+        of one cap per problem, parallel to `problems` -- the per-problem form
+        is how an allocation policy spends a fixed total budget unevenly. A
+        non-positive entry in the list means that problem is uncapped.
         """
         ...
 

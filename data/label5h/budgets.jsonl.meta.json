@@ -1,0 +1,99 @@
+{
+  "created_at": "2026-08-08T03:03:54+00:00",
+  "git_sha": "9c24ee3-dirty",
+  "artifact": "budgets",
+  "produced_by": "frugalprover.oracle.budget:TokenSweepEstimator",
+  "config": {
+    "estimator": "sweep",
+    "agent": "Qwen/Qwen2.5-1.5B-Instruct",
+    "budgets": [
+      1024,
+      2048,
+      4096,
+      8192
+    ],
+    "n_samples": 3,
+    "single_pass_reconstruct": false,
+    "success_threshold": 0.5,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "batch_size": 12,
+    "time_budget_s": 17400,
+    "shuffle": true,
+    "continue_on_error": true,
+    "prompt_template": "Problem:\n{problem}\n\nSolve step by step, then give the final answer in \\boxed{{}}.\n\nSolution:",
+    "problems": "problems.jsonl",
+    "max_problems": null,
+    "seed": 0,
+    "output": "budgets.jsonl"
+  },
+  "n_records": 276,
+  "elapsed_s": 16686.1,
+  "n_labeled_this_run": 276,
+  "n_remaining": 4320,
+  "stopped_early": true,
+  "shuffled": true,
+  "order_seed": 0,
+  "n_solved": 219,
+  "n_censored": 57,
+  "budgets": [
+    1024,
+    2048,
+    4096,
+    8192
+  ],
+  "b_star_distribution": {
+    "1024": 114,
+    "2048": 39,
+    "4096": 46,
+    "8192": 20,
+    "censored": 57
+  },
+  "single_pass": false,
+  "agent_spec": {
+    "type": "verify_repair",
+    "prover": {
+      "client": "openai",
+      "model": "deepseek-r1-7b",
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "max_tokens": 8192,
+      "base_url": "http://127.0.0.1:8000/v1",
+      "api_key_env": "VLLM_API_KEY",
+      "max_batch_size": 8,
+      "max_concurrency": 256,
+      "quantization": "none"
+    },
+    "corrector": {
+      "client": "openai",
+      "model": "deepseek-r1-7b",
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "max_tokens": 8192,
+      "base_url": "http://127.0.0.1:8000/v1",
+      "api_key_env": "VLLM_API_KEY",
+      "max_batch_size": 8,
+      "max_concurrency": 256,
+      "quantization": "none"
+    },
+    "verifiers": [
+      {
+        "client": "openai",
+        "model": "deepseek-r1-7b",
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "max_tokens": 4096,
+        "base_url": "http://127.0.0.1:8000/v1",
+        "api_key_env": "VLLM_API_KEY",
+        "max_batch_size": 8,
+        "max_concurrency": 256,
+        "quantization": "none"
+      }
+    ],
+    "aggregation": "unanimity",
+    "independence": "blind",
+    "max_rounds": 3,
+    "on_nonconvergence": "reject",
+    "k": 1
+  }
+}
