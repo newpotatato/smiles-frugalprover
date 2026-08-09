@@ -1,0 +1,149 @@
+{
+  "n_scored": 200,
+  "n_dropped_partial": 0,
+  "baseline": "uniform",
+  "arms": [
+    {
+      "arm": "uniform",
+      "n": 200,
+      "n_solved": 122,
+      "solve_rate": 0.61,
+      "n_skipped": 0,
+      "tokens": 465535,
+      "cap_budget": 579584,
+      "cap_utilisation": 0.8032,
+      "solved_per_1m_tokens": 262.06,
+      "accept_rate": 0.52,
+      "mean_cap": 2897.9
+    },
+    {
+      "arm": "length",
+      "n": 200,
+      "n_solved": 120,
+      "solve_rate": 0.6,
+      "n_skipped": 0,
+      "tokens": 485892,
+      "cap_budget": 551936,
+      "cap_utilisation": 0.8803,
+      "solved_per_1m_tokens": 246.97,
+      "accept_rate": 0.43,
+      "mean_cap": 2759.7
+    },
+    {
+      "arm": "oracle_greedy",
+      "n": 200,
+      "n_solved": 126,
+      "solve_rate": 0.63,
+      "n_skipped": 0,
+      "tokens": 514154,
+      "cap_budget": 573440,
+      "cap_utilisation": 0.8966,
+      "solved_per_1m_tokens": 245.06,
+      "accept_rate": 0.5,
+      "mean_cap": 2867.2
+    },
+    {
+      "arm": "oracle_triage",
+      "n": 200,
+      "n_solved": 127,
+      "solve_rate": 0.635,
+      "n_skipped": 5,
+      "tokens": 505021,
+      "cap_budget": 576512,
+      "cap_utilisation": 0.876,
+      "solved_per_1m_tokens": 251.47,
+      "accept_rate": 0.5231,
+      "mean_cap": 2882.6
+    }
+  ],
+  "paired_tests": [
+    {
+      "baseline": "uniform",
+      "arm": "length",
+      "n_paired": 200,
+      "baseline_only": 20,
+      "arm_only": 18,
+      "p_value": 0.8714
+    },
+    {
+      "baseline": "uniform",
+      "arm": "oracle_greedy",
+      "n_paired": 200,
+      "baseline_only": 15,
+      "arm_only": 19,
+      "p_value": 0.6076
+    },
+    {
+      "baseline": "uniform",
+      "arm": "oracle_triage",
+      "n_paired": 200,
+      "baseline_only": 16,
+      "arm_only": 21,
+      "p_value": 0.5114
+    }
+  ],
+  "abstention": [
+    {
+      "arm": "oracle_triage",
+      "n_skipped": 5,
+      "skipped_but_baseline_solved": 0
+    }
+  ],
+  "elapsed_s": 2880.7,
+  "stopped_early": true,
+  "b_bar": 2896,
+  "grid": [
+    1024,
+    2048,
+    4096,
+    8192
+  ],
+  "triage_threshold": 0.4,
+  "agent_spec": {
+    "type": "verify_repair",
+    "prover": {
+      "client": "openai",
+      "model": "deepseek-r1-7b",
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "max_tokens": 8192,
+      "base_url": "http://127.0.0.1:8000/v1",
+      "api_key_env": "VLLM_API_KEY",
+      "max_batch_size": 8,
+      "max_concurrency": 256,
+      "quantization": "none"
+    },
+    "corrector": {
+      "client": "openai",
+      "model": "deepseek-r1-7b",
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "max_tokens": 8192,
+      "base_url": "http://127.0.0.1:8000/v1",
+      "api_key_env": "VLLM_API_KEY",
+      "max_batch_size": 8,
+      "max_concurrency": 256,
+      "quantization": "none"
+    },
+    "verifiers": [
+      {
+        "client": "openai",
+        "model": "deepseek-r1-7b",
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "max_tokens": 4096,
+        "base_url": "http://127.0.0.1:8000/v1",
+        "api_key_env": "VLLM_API_KEY",
+        "max_batch_size": 8,
+        "max_concurrency": 256,
+        "quantization": "none"
+      }
+    ],
+    "aggregation": "unanimity",
+    "independence": "blind",
+    "max_rounds": 3,
+    "on_nonconvergence": "reject",
+    "seed_mode": "per_problem",
+    "k": 1
+  }
+}
