@@ -286,9 +286,62 @@ class AgentConfig:
     aggregation: str = "unanimity"              # unanimity | majority
     independence: str = "blind"                 # blind | debate
     on_nonconvergence: str = "reject"           # reject | flag
+    #: `per_problem` derives each attempt's decoding seed from the problem id
+    #: (agent/base.py:stable_seed) and sends it with every request. The same
+    #: problem then follows the same trajectory under two different budgets, so
+    #: an allocation A/B compares budgets rather than two independent draws.
+    #: Only the `openai` client honours it; `hf` warns and ignores it. Leave at
+    #: `none` for labeling runs, where independent draws are the point.
+    seed_mode: str = "none"                     # none | per_problem
     prover_prompt: str = PROVE_PROMPT
     verifier_prompt: str = VERIFY_PROMPT
     corrector_prompt: str = REPAIR_PROMPT
+
+
+@dataclass
+class AllocateConfig:
+    """H2 — spend a fixed total token budget across problems, several ways.
+
+    Not a pipeline stage: it consumes a fitted oracle and drives the agent, so
+    it runs after `train` and produces its own artifact rather than feeding the
+    next stage. See allocate/policies.py for what each arm does.
+    """
+
+    #: The arms, run against the same problems at the same total budget. The
+    #: first is usually `uniform` -- see `baseline`.
+    policies: list[str] = field(
+        default_factory=lambda: ["uniform", "length", "oracle_bhat", "oracle_triage"]
+    )
+    #: Token caps a policy may assign. Must be the budgets the oracle was fitted
+    #: on: its success curve is only defined at these points.
+    grid: list[int] = field(default_factory=lambda: [1024, 2048, 4096, 8192])
+    #: Mean budget per problem. B_tot = b_bar * n_problems, identical for every
+    #: arm -- this is what "matched compute" means here. Put it *on* the grid, or
+    #: `uniform` has to round and stops being exactly uniform.
+    b_bar: int = 2048
+    n_samples: int = 1
+    #: Fitted oracle, resolved against results/ then data/.
+    oracle: str = "oracle.joblib"
+    hidden_states: str | None = "hidden_states.parquet"
+    #: `oracle_triage` abstains below this predicted success at max(grid).
+    triage_threshold: float = 0.3
+    #: Arm the paired tests compare against.
+    baseline: str = "uniform"
+    problems: str = "problems.jsonl"
+    #: A budgets.jsonl whose ids are dropped from the eval set. The oracle was
+    #: fitted on those problems, so leaving them in would score memorisation.
+    exclude_labeled: str | None = None
+    max_problems: int | None = None
+    #: Problems per chunk. Every arm runs on a chunk before the next chunk
+    #: starts, so a run stopped by `time_budget_s` leaves all arms on the same
+    #: prefix and the paired comparison still holds.
+    chunk_size: int = 25
+    time_budget_s: float | None = None
+    shuffle: bool = True
+    seed: int = 0
+    continue_on_error: bool = False
+    output: str = "alloc.jsonl"
+    report: str = "allocation.json"
 
 
 @dataclass
@@ -303,6 +356,7 @@ class PipelineConfig:
     train: TrainConfig = field(default_factory=TrainConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
+    allocate: AllocateConfig = field(default_factory=AllocateConfig)
 
     # -- path helpers: stage configs hold bare filenames, resolved against the run
 
@@ -497,6 +551,7 @@ def _validate(cfg: PipelineConfig) -> None:
     check(a.aggregation, ["unanimity", "majority"], "agent.aggregation")
     check(a.independence, ["blind", "debate"], "agent.independence")
     check(a.on_nonconvergence, ["reject", "flag"], "agent.on_nonconvergence")
+    check(a.seed_mode, ["none", "per_problem"], "agent.seed_mode")
     for role, spec in [("prover", a.prover), ("corrector", a.corrector)]:
         check(spec.client, ["mock", "openai", "hf"], f"agent.{role}.client")
         check(spec.quantization, QUANTIZATIONS, f"agent.{role}.quantization")
@@ -508,6 +563,28 @@ def _validate(cfg: PipelineConfig) -> None:
     if a.type == "verify_repair" and len(a.verifiers) < 1:
         raise ValueError("agent.verifiers is empty — the loop needs at least one verifier.")
 
+    al = cfg.allocate
+    if not al.grid:
+        raise ValueError("allocate.grid is empty — at least one token cap is required.")
+    if sorted(al.grid) != list(al.grid):
+        raise ValueError(f"allocate.grid must be ascending, got {al.grid}")
+    if not al.policies:
+        raise ValueError("allocate.policies is empty — nothing to compare.")
+    if al.baseline not in al.policies:
+        raise ValueError(
+            f"allocate.baseline={al.baseline!r} is not one of allocate.policies "
+            f"{al.policies} — the paired tests have nothing to compare against."
+        )
+    if not min(al.grid) <= al.b_bar <= max(al.grid):
+        raise ValueError(
+            f"allocate.b_bar={al.b_bar} is outside allocate.grid {al.grid}. The mean "
+            "budget has to be reachable, or no arm can spend its allowance."
+        )
+    if not 0.0 <= al.triage_threshold <= 1.0:
+        raise ValueError(
+            f"allocate.triage_threshold must be in [0, 1], got {al.triage_threshold}"
+        )
+
 
 _NESTED[PipelineConfig] = {
     "sample": SampleConfig,
@@ -516,6 +593,7 @@ _NESTED[PipelineConfig] = {
     "train": TrainConfig,
     "report": ReportConfig,
     "agent": AgentConfig,
+    "allocate": AllocateConfig,
 }
 _NESTED[AgentConfig] = {
     "prover": ModelSpec,

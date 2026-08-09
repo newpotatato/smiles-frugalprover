@@ -156,6 +156,18 @@ def cmd_predict(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_allocate(args: argparse.Namespace) -> int:
+    """H2: run the agent under several budget policies at matched total compute."""
+    from frugalprover.allocate import run_allocate
+
+    cfg = _resolve(args)
+    _add_run_log(cfg, args)
+    if args.max_problems:
+        cfg.allocate.max_problems = args.max_problems
+    run_allocate(cfg)
+    return 0
+
+
 def cmd_prove(args: argparse.Namespace) -> int:
     """Run the solving agent (cfg.agent) on a problems file and record traces."""
     from frugalprover.agent import build_agent
@@ -282,6 +294,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hidden", required=True, help="hidden_states.parquet")
     p.add_argument("--out", default="predictions.jsonl")
     p.set_defaults(func=cmd_predict)
+
+    p = sub.add_parser(
+        "allocate",
+        help="H2: compare budget-allocation policies at matched total compute",
+        description="Run cfg.agent over the same problems under each policy in "
+                    "allocate.policies, all sharing one total token budget, and "
+                    "report which allocation solved more.",
+    )
+    add_common(p)
+    p.add_argument("--max-problems", type=int, default=None,
+                   help="cap the eval set (overrides allocate.max_problems)")
+    p.set_defaults(func=cmd_allocate)
 
     p = sub.add_parser("prove", help="run the solving agent (cfg.agent) on a problems file")
     add_common(p)

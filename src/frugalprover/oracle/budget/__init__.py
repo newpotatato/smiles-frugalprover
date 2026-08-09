@@ -10,6 +10,7 @@ import random
 import time
 
 from frugalprover.common.config import AgentConfig, BudgetConfig, PipelineConfig
+from frugalprover.common.deadline import ema, should_stop
 from frugalprover.common.io import (
     append_jsonl,
     existing_ids,
@@ -112,7 +113,7 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
     try:
         starts = list(range(0, len(todo), bc.batch_size))
         for i in track(starts, description="labeling", total=len(starts)):
-            if _should_stop(bc.time_budget_s, t0, batch_s):
+            if should_stop(bc.time_budget_s, t0, batch_s):
                 stopped_early = True
                 break
             batch = todo[i : i + bc.batch_size]
@@ -127,8 +128,7 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
                 log.exception("batch at offset %d failed -- skipping %d problem(s). "
                               "Rerun to retry them.", i, len(batch))
                 continue
-            dt = time.perf_counter() - t_batch
-            batch_s = dt if batch_s is None else 0.7 * batch_s + 0.3 * dt
+            batch_s = ema(batch_s, time.perf_counter() - t_batch)
     finally:
         estimator.teardown()
 
@@ -175,28 +175,6 @@ def run_budget(cfg: PipelineConfig) -> list[BudgetRecord]:
                     "command to continue where this left off",
                     len(todo) - n_labeled, len(todo))
     return records
-
-
-def _should_stop(limit: float | None, t0: float, batch_s: float | None) -> bool:
-    """Whether to stop before starting another batch.
-
-    The predictive arm is the one that buys coverage: a batch started three
-    minutes before the deadline finishes after it, wasting both those minutes and
-    the batch. `batch_s` is an EMA, so it self-calibrates to the hardware.
-    """
-    if limit is None:
-        return False
-    elapsed = time.perf_counter() - t0
-    if elapsed >= limit:
-        log.warning("time budget %.0fs reached after %.0fs -- stopping between batches",
-                    limit, elapsed)
-        return True
-    if batch_s is not None and elapsed + batch_s > limit:
-        log.warning("time budget %.0fs: %.0fs elapsed and the next batch needs ~%.0fs -- "
-                    "stopping now rather than starting one that would be cut off",
-                    limit, elapsed, batch_s)
-        return True
-    return False
 
 
 def describe(records: list[BudgetRecord]) -> dict:

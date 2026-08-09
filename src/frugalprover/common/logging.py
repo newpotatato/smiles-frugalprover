@@ -105,9 +105,20 @@ def get_logger(name: str) -> logging.Logger:
     Configures a sensible default the first time it's called, so a standalone
     script (``python -m frugalprover.analysis.*``) still logs nicely even if it
     forgot to call :func:`configure`.
+
+    ``python -m pkg.mod`` runs the module as ``__main__``, so a bare
+    ``get_logger(__name__)`` there would build a logger *outside* this package
+    root -- where our handlers are installed -- and every INFO line would be
+    dropped by the stdlib root instead of printed. The interpreter still records
+    the real dotted name in ``__main__.__spec__``, so recover it.
     """
     if not _configured:
         configure()
+    if name == "__main__":
+        import sys
+
+        spec = getattr(sys.modules.get("__main__"), "__spec__", None)
+        name = spec.name if spec is not None else _ROOT
     return logging.getLogger(name)
 
 

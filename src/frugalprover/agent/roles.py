@@ -40,15 +40,36 @@ class _Role:
         self.prompt = prompt
         self.role = role
 
-    def _generate(self, texts: list[str]) -> list[str]:
+    def _generate(
+        self,
+        texts: list[str],
+        caps: list[int | None] | None = None,
+        seeds: list[int] | None = None,
+    ) -> list[str]:
+        """Generate, with each item's per-call cap lowered to its own budget.
+
+        `caps` is one *attempt* budget per item (None = unbudgeted). The role
+        still never exceeds its own configured `max_tokens`; the budget can only
+        lower it. This is the per-attempt form of
+        `TokenSweepEstimator._clamped`, which does the same thing for a whole
+        pass: without it the prover would emit its full configured `max_tokens`
+        regardless of the budget, and an internal call that ignores the budget
+        makes the budget axis meaningless.
+        """
         if not texts:
             return []
+        limit = self.spec.max_tokens
+        if caps is None:
+            max_tokens: int | list[int] = limit
+        else:
+            max_tokens = [limit if c is None else max(1, min(limit, c)) for c in caps]
         return self.client.generate(
             texts,
-            max_tokens=self.spec.max_tokens,
+            max_tokens=max_tokens,
             temperature=self.spec.temperature,
             top_p=self.spec.top_p,
             role=self.role,
+            seeds=seeds,
         )
 
     def count_tokens(self, text: str) -> int:
@@ -58,8 +79,15 @@ class _Role:
 class Prover(_Role):
     """Proposes candidate solutions, one per problem."""
 
-    def propose(self, problems: list[str]) -> list[str]:
-        return self._generate([self.prompt.format(problem=p) for p in problems])
+    def propose(
+        self,
+        problems: list[str],
+        caps: list[int | None] | None = None,
+        seeds: list[int] | None = None,
+    ) -> list[str]:
+        return self._generate(
+            [self.prompt.format(problem=p) for p in problems], caps, seeds
+        )
 
 
 class Corrector(_Role):
@@ -69,14 +97,19 @@ class Corrector(_Role):
     corrected candidate per item, in order.
     """
 
-    def repair(self, items: list[tuple[str, str, list[str]]]) -> list[str]:
+    def repair(
+        self,
+        items: list[tuple[str, str, list[str]]],
+        caps: list[int | None] | None = None,
+        seeds: list[int] | None = None,
+    ) -> list[str]:
         texts = []
         for problem, candidate, flaws in items:
             flaw_text = "\n".join(f"- {f}" for f in flaws) or "- (unspecified)"
             texts.append(
                 self.prompt.format(problem=problem, candidate=candidate, flaws=flaw_text)
             )
-        return self._generate(texts)
+        return self._generate(texts, caps, seeds)
 
 
 class Verifier(_Role):
@@ -91,6 +124,8 @@ class Verifier(_Role):
         self,
         items: list[tuple[str, str]],
         peers: list[list[Critique]] | None = None,
+        caps: list[int | None] | None = None,
+        seeds: list[int] | None = None,
     ) -> list[Critique]:
         texts = []
         for i, (problem, candidate) in enumerate(items):
@@ -99,7 +134,7 @@ class Verifier(_Role):
                 joined = "\n".join(f"- {f}" for c in peers[i] for f in c.flaws)
                 text += f"\n\nOther reviewers raised:\n{joined}\n"
             texts.append(text)
-        return [parse_critique(o) for o in self._generate(texts)]
+        return [parse_critique(o) for o in self._generate(texts, caps, seeds)]
 
 
 def parse_critique(raw: str) -> Critique:

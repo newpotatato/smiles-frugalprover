@@ -54,6 +54,7 @@ that were nearly solved. Doing better requires knowing something about a problem
 | **Prover** — solves under a budget | **built** (mock + `hf` backends run) | `agent/` |
 | **Verifiers** — ensemble check, k≥3 | **built** (in the verify-repair loop) | `agent/` |
 | **Corrector** — repair loop on failure | **built** (in the verify-repair loop) | `agent/` |
+| **Allocator** — splits a fixed `B_tot` using `B̂(x)` | **built** | `allocate/` |
 | **Human Gate** — sole sign-off on accepted proofs | not started | — |
 | **Orchestrator** — online updates, tactic proposals | not started | — |
 
@@ -69,7 +70,7 @@ gates in [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md).
 |---|---|---|
 | **0** | Harness + ground-truth `B*` labels | **built**: agent-driven budget labeling (Stage 2 `sweep`) runs |
 | **1** | **H1**: solve effort is predictable from activations | pipeline built; Stage 2 now produces real labels |
-| **2** | **H2**: budget-aware allocation beats uniform at matched compute | not started |
+| **2** | **H2**: budget-aware allocation beats uniform at matched compute | **built** (`allocate/`); simulated on 276 labels, live run pending |
 | **3** | **H3**: self-improvement without raising the false-accept rate | not started |
 | **4** | Geometry of the difficulty representation | analyses built, pilot results in `docs/geometry_pilot/` |
 
@@ -265,9 +266,51 @@ print(agent.last_traces[0][0])          # {status, accepted, rounds, flaws, toke
 `solve_batch` returns `list[list[Sample]]` — `n_samples` `Sample(text, tokens)`
 per problem. `max_new_tokens=0` means no token cap (standalone use); a positive
 value caps an attempt's total generated tokens, which is how Stage 2 sweeps the
-budget over the agent (summing `Sample.tokens` for `tokens_spent`).
+budget over the agent (summing `Sample.tokens` for `tokens_spent`). It also
+accepts a **list of one cap per problem**, which is the whole integration
+surface for the allocator below — the agent never learns that an oracle exists.
 `agent.last_traces` carries the richer per-attempt diagnostics for the `prove`
 CLI — it is *not* part of the `SolverAgent` protocol.
+
+## Spending the budget: `allocate/`
+
+The oracle predicts how much effort a problem needs; the agent spends effort.
+`allocate/` is the join — the only package that imports both — and it answers
+H2: given `B_tot` for a set of problems, does splitting it by `B̂(x)` solve more
+than splitting it evenly?
+
+```bash
+# offline first: score every policy against the measured p(B) in an A2 file.
+# No GPU, seconds, and it picks the operating point the live run should use.
+python -m frugalprover.analysis.allocation_sim \
+    --problems data/label5h/problems.jsonl \
+    --budgets  data/label5h/budgets.jsonl --b-bar 2896 --sweep-triage
+
+# then live: every arm, same problems, same total budget, only the split differs
+frugalprover allocate -c configs/base.yaml \
+    -c configs/agent/DeepSeek_R1_Distill_Qwen_7B_vllm.yaml \
+    -c configs/allocate/h2_matched_compute.yaml --run-name h2
+```
+
+| policy | rule |
+|---|---|
+| `uniform` | the floor: everyone gets `B_tot / n` |
+| `length` | budget ∝ problem length — **the deconfounder the oracle must beat** |
+| `oracle_bhat` | budget ∝ predicted `B̂` |
+| `oracle_greedy` | marginal gain: buy the steepest slice of `p̂(B)` first |
+| `oracle_optimal` | the same objective solved exactly, by knapsack DP |
+| `oracle_triage` | abstain where `p̂(B_max)` is hopeless, spend those tokens elsewhere |
+| `true_bstar` | ceiling, offline only: the optimum under *measured* curves |
+
+The policies are pure functions — candidates in, integer caps out, no agent, no
+I/O — so the offline simulation and the live run provably share one allocator.
+Adding a policy is a function plus a line in `POLICIES`.
+
+Two things to read carefully in any result: **matched compute is judged on
+tokens actually generated**, not on the caps allotted (arms stop early at
+different rates), and **an off-grid `b_bar` is where allocation can act at all**
+— when `B_tot` is exactly `n ×` a grid budget, every arm can afford the same cap
+for everyone and the comparison measures nothing.
 
 ## Layout
 
@@ -275,6 +318,7 @@ CLI — it is *not* part of the `SolverAgent` protocol.
 src/frugalprover/
   common/         config, artifact I/O, records, grading
   agent/          the solving agent: prover -> verifiers -> corrector loop
+  allocate/       H2: split a fixed B_tot across problems (policies + runner)
   oracle/         the Budget Oracle, as five stages
     sample/         Stage 1  problem sampling
     budget/         Stage 2  budget labeling (agent sweep + mock)
@@ -343,8 +387,9 @@ python -m frugalprover.analysis.layer_probe \
 ```
 
 Also `geometry` (intrinsic dimension vs difficulty — Phase 4), `calibration`
-(labeling cost vs oracle-guided cost), and `learning_curve` (does the oracle
-improve as labels accrue — Phase 3's online-update claim).
+(labeling cost vs oracle-guided cost), `learning_curve` (does the oracle improve
+as labels accrue — Phase 3's online-update claim), and `allocation_sim` (H2
+offline: score every allocation policy against measured `p(B)`, for free).
 
 ## Reading order
 
