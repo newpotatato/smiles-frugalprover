@@ -1,0 +1,998 @@
+{
+  "n_problems": 276,
+  "grid": [
+    1024,
+    2048,
+    4096,
+    8192
+  ],
+  "tau": 0.5,
+  "features": [
+    "surface",
+    "subject"
+  ],
+  "layer": null,
+  "triage_threshold": 0.3,
+  "curve": [
+    {
+      "arm": "uniform",
+      "b_bar": 1024.0,
+      "b_tot": 282624,
+      "allotted": 282624,
+      "expected_solved": 111.0,
+      "solve_rate": 0.4022,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 392.75
+    },
+    {
+      "arm": "length",
+      "b_bar": 1024.0,
+      "b_tot": 282624,
+      "allotted": 282624,
+      "expected_solved": 111.0,
+      "solve_rate": 0.4022,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 392.75
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 1024.0,
+      "b_tot": 282624,
+      "allotted": 282624,
+      "expected_solved": 111.0,
+      "solve_rate": 0.4022,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 392.75
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 1024.0,
+      "b_tot": 282624,
+      "allotted": 282624,
+      "expected_solved": 111.0,
+      "solve_rate": 0.4022,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 392.75
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 1024.0,
+      "b_tot": 282624,
+      "allotted": 282624,
+      "expected_solved": 118.333,
+      "solve_rate": 0.4287,
+      "n_skipped": 65,
+      "solved_per_1m_allotted": 418.7
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 1024.0,
+      "b_tot": 282624,
+      "allotted": 282624,
+      "expected_solved": 111.667,
+      "solve_rate": 0.4046,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 395.11
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 1024.0,
+      "b_tot": 282624,
+      "allotted": 282624,
+      "expected_solved": 158.0,
+      "solve_rate": 0.5725,
+      "n_skipped": 100,
+      "solved_per_1m_allotted": 559.05
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 1327.9637039626336,
+      "b_tot": 366518,
+      "allotted": 365568,
+      "expected_solved": 120.0,
+      "solve_rate": 0.4348,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 328.26
+    },
+    {
+      "arm": "length",
+      "b_bar": 1327.9637039626336,
+      "b_tot": 366518,
+      "allotted": 365568,
+      "expected_solved": 116.667,
+      "solve_rate": 0.4227,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 319.14
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 1327.9637039626336,
+      "b_tot": 366518,
+      "allotted": 365568,
+      "expected_solved": 121.0,
+      "solve_rate": 0.4384,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 330.99
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 1327.9637039626336,
+      "b_tot": 366518,
+      "allotted": 365568,
+      "expected_solved": 124.0,
+      "solve_rate": 0.4493,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 339.2
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 1327.9637039626336,
+      "b_tot": 366518,
+      "allotted": 365568,
+      "expected_solved": 128.0,
+      "solve_rate": 0.4638,
+      "n_skipped": 49,
+      "solved_per_1m_allotted": 350.14
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 1327.9637039626336,
+      "b_tot": 366518,
+      "allotted": 365568,
+      "expected_solved": 125.333,
+      "solve_rate": 0.4541,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 342.85
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 1327.9637039626336,
+      "b_tot": 366518,
+      "allotted": 365568,
+      "expected_solved": 177.0,
+      "solve_rate": 0.6413,
+      "n_skipped": 82,
+      "solved_per_1m_allotted": 484.18
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 1722.1558584396066,
+      "b_tot": 475315,
+      "allotted": 475136,
+      "expected_solved": 135.333,
+      "solve_rate": 0.4903,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 284.83
+    },
+    {
+      "arm": "length",
+      "b_bar": 1722.1558584396066,
+      "b_tot": 475315,
+      "allotted": 475136,
+      "expected_solved": 124.0,
+      "solve_rate": 0.4493,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 260.98
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 1722.1558584396066,
+      "b_tot": 475315,
+      "allotted": 475136,
+      "expected_solved": 133.333,
+      "solve_rate": 0.4831,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 280.62
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 1722.1558584396066,
+      "b_tot": 475315,
+      "allotted": 475136,
+      "expected_solved": 138.333,
+      "solve_rate": 0.5012,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 291.14
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 1722.1558584396066,
+      "b_tot": 475315,
+      "allotted": 475136,
+      "expected_solved": 141.333,
+      "solve_rate": 0.5121,
+      "n_skipped": 29,
+      "solved_per_1m_allotted": 297.46
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 1722.1558584396066,
+      "b_tot": 475315,
+      "allotted": 475136,
+      "expected_solved": 138.667,
+      "solve_rate": 0.5024,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 291.85
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 1722.1558584396066,
+      "b_tot": 475315,
+      "allotted": 475136,
+      "expected_solved": 193.667,
+      "solve_rate": 0.7017,
+      "n_skipped": 65,
+      "solved_per_1m_allotted": 407.6
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 2048.0,
+      "b_tot": 565248,
+      "allotted": 565248,
+      "expected_solved": 147.0,
+      "solve_rate": 0.5326,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 260.06
+    },
+    {
+      "arm": "length",
+      "b_bar": 2048.0,
+      "b_tot": 565248,
+      "allotted": 565248,
+      "expected_solved": 130.667,
+      "solve_rate": 0.4734,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 231.17
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 2048.0,
+      "b_tot": 565248,
+      "allotted": 565248,
+      "expected_solved": 142.333,
+      "solve_rate": 0.5157,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 251.81
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 2048.0,
+      "b_tot": 565248,
+      "allotted": 565248,
+      "expected_solved": 144.667,
+      "solve_rate": 0.5242,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 255.93
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 2048.0,
+      "b_tot": 565248,
+      "allotted": 565248,
+      "expected_solved": 145.667,
+      "solve_rate": 0.5278,
+      "n_skipped": 20,
+      "solved_per_1m_allotted": 257.7
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 2048.0,
+      "b_tot": 565248,
+      "allotted": 565248,
+      "expected_solved": 145.333,
+      "solve_rate": 0.5266,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 257.11
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 2048.0,
+      "b_tot": 565248,
+      "allotted": 564224,
+      "expected_solved": 204.0,
+      "solve_rate": 0.7391,
+      "n_skipped": 57,
+      "solved_per_1m_allotted": 361.56
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 2233.3598364984464,
+      "b_tot": 616407,
+      "allotted": 614400,
+      "expected_solved": 150.0,
+      "solve_rate": 0.5435,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 244.14
+    },
+    {
+      "arm": "length",
+      "b_bar": 2233.3598364984464,
+      "b_tot": 616407,
+      "allotted": 615424,
+      "expected_solved": 134.0,
+      "solve_rate": 0.4855,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 217.74
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 2233.3598364984464,
+      "b_tot": 616407,
+      "allotted": 615424,
+      "expected_solved": 144.0,
+      "solve_rate": 0.5217,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 233.99
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 2233.3598364984464,
+      "b_tot": 616407,
+      "allotted": 615424,
+      "expected_solved": 153.667,
+      "solve_rate": 0.5568,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 249.69
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 2233.3598364984464,
+      "b_tot": 616407,
+      "allotted": 615424,
+      "expected_solved": 156.667,
+      "solve_rate": 0.5676,
+      "n_skipped": 20,
+      "solved_per_1m_allotted": 254.57
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 2233.3598364984464,
+      "b_tot": 616407,
+      "allotted": 615424,
+      "expected_solved": 154.667,
+      "solve_rate": 0.5604,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 251.32
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 2233.3598364984464,
+      "b_tot": 616407,
+      "allotted": 613376,
+      "expected_solved": 208.0,
+      "solve_rate": 0.7536,
+      "n_skipped": 52,
+      "solved_per_1m_allotted": 339.11
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 2896.0,
+      "b_tot": 799296,
+      "allotted": 798720,
+      "expected_solved": 162.0,
+      "solve_rate": 0.587,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 202.82
+    },
+    {
+      "arm": "length",
+      "b_bar": 2896.0,
+      "b_tot": 799296,
+      "allotted": 798720,
+      "expected_solved": 151.667,
+      "solve_rate": 0.5495,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 189.89
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 2896.0,
+      "b_tot": 799296,
+      "allotted": 798720,
+      "expected_solved": 150.333,
+      "solve_rate": 0.5447,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 188.22
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 2896.0,
+      "b_tot": 799296,
+      "allotted": 798720,
+      "expected_solved": 173.0,
+      "solve_rate": 0.6268,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 216.6
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 2896.0,
+      "b_tot": 799296,
+      "allotted": 798720,
+      "expected_solved": 173.0,
+      "solve_rate": 0.6268,
+      "n_skipped": 14,
+      "solved_per_1m_allotted": 216.6
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 2896.0,
+      "b_tot": 799296,
+      "allotted": 798720,
+      "expected_solved": 173.333,
+      "solve_rate": 0.628,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 217.01
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 2896.0,
+      "b_tot": 799296,
+      "allotted": 758784,
+      "expected_solved": 216.667,
+      "solve_rate": 0.785,
+      "n_skipped": 39,
+      "solved_per_1m_allotted": 285.54
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 2896.309375740099,
+      "b_tot": 799381,
+      "allotted": 798720,
+      "expected_solved": 162.0,
+      "solve_rate": 0.587,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 202.82
+    },
+    {
+      "arm": "length",
+      "b_bar": 2896.309375740099,
+      "b_tot": 799381,
+      "allotted": 798720,
+      "expected_solved": 151.667,
+      "solve_rate": 0.5495,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 189.89
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 2896.309375740099,
+      "b_tot": 799381,
+      "allotted": 798720,
+      "expected_solved": 150.333,
+      "solve_rate": 0.5447,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 188.22
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 2896.309375740099,
+      "b_tot": 799381,
+      "allotted": 798720,
+      "expected_solved": 173.0,
+      "solve_rate": 0.6268,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 216.6
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 2896.309375740099,
+      "b_tot": 799381,
+      "allotted": 798720,
+      "expected_solved": 173.0,
+      "solve_rate": 0.6268,
+      "n_skipped": 14,
+      "solved_per_1m_allotted": 216.6
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 2896.309375740099,
+      "b_tot": 799381,
+      "allotted": 798720,
+      "expected_solved": 173.333,
+      "solve_rate": 0.628,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 217.01
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 2896.309375740099,
+      "b_tot": 799381,
+      "allotted": 758784,
+      "expected_solved": 216.667,
+      "solve_rate": 0.785,
+      "n_skipped": 39,
+      "solved_per_1m_allotted": 285.54
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 3756.0485609663297,
+      "b_tot": 1036669,
+      "allotted": 1036288,
+      "expected_solved": 180.333,
+      "solve_rate": 0.6534,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 174.02
+    },
+    {
+      "arm": "length",
+      "b_bar": 3756.0485609663297,
+      "b_tot": 1036669,
+      "allotted": 1036288,
+      "expected_solved": 176.0,
+      "solve_rate": 0.6377,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 169.84
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 3756.0485609663297,
+      "b_tot": 1036669,
+      "allotted": 1036288,
+      "expected_solved": 175.667,
+      "solve_rate": 0.6365,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 169.52
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 3756.0485609663297,
+      "b_tot": 1036669,
+      "allotted": 1036288,
+      "expected_solved": 187.0,
+      "solve_rate": 0.6775,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 180.45
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 3756.0485609663297,
+      "b_tot": 1036669,
+      "allotted": 1036288,
+      "expected_solved": 187.667,
+      "solve_rate": 0.68,
+      "n_skipped": 7,
+      "solved_per_1m_allotted": 181.1
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 3756.0485609663297,
+      "b_tot": 1036669,
+      "allotted": 1036288,
+      "expected_solved": 188.0,
+      "solve_rate": 0.6812,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 181.42
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 3756.0485609663297,
+      "b_tot": 1036669,
+      "allotted": 758784,
+      "expected_solved": 216.667,
+      "solve_rate": 0.785,
+      "n_skipped": 39,
+      "solved_per_1m_allotted": 285.54
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 4096.0,
+      "b_tot": 1130496,
+      "allotted": 1130496,
+      "expected_solved": 189.333,
+      "solve_rate": 0.686,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 167.48
+    },
+    {
+      "arm": "length",
+      "b_bar": 4096.0,
+      "b_tot": 1130496,
+      "allotted": 1130496,
+      "expected_solved": 177.667,
+      "solve_rate": 0.6437,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 157.16
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 4096.0,
+      "b_tot": 1130496,
+      "allotted": 1130496,
+      "expected_solved": 177.667,
+      "solve_rate": 0.6437,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 157.16
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 4096.0,
+      "b_tot": 1130496,
+      "allotted": 1130496,
+      "expected_solved": 191.0,
+      "solve_rate": 0.692,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 168.95
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 4096.0,
+      "b_tot": 1130496,
+      "allotted": 1130496,
+      "expected_solved": 191.0,
+      "solve_rate": 0.692,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 168.95
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 4096.0,
+      "b_tot": 1130496,
+      "allotted": 1130496,
+      "expected_solved": 191.0,
+      "solve_rate": 0.692,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 168.95
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 4096.0,
+      "b_tot": 1130496,
+      "allotted": 758784,
+      "expected_solved": 216.667,
+      "solve_rate": 0.785,
+      "n_skipped": 39,
+      "solved_per_1m_allotted": 285.54
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 4870.992343051144,
+      "b_tot": 1344394,
+      "allotted": 1343488,
+      "expected_solved": 193.0,
+      "solve_rate": 0.6993,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 143.66
+    },
+    {
+      "arm": "length",
+      "b_bar": 4870.992343051144,
+      "b_tot": 1344394,
+      "allotted": 1343488,
+      "expected_solved": 191.333,
+      "solve_rate": 0.6932,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 142.42
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 4870.992343051144,
+      "b_tot": 1344394,
+      "allotted": 1343488,
+      "expected_solved": 192.333,
+      "solve_rate": 0.6969,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 143.16
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 4870.992343051144,
+      "b_tot": 1344394,
+      "allotted": 1343488,
+      "expected_solved": 195.0,
+      "solve_rate": 0.7065,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 145.14
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 4870.992343051144,
+      "b_tot": 1344394,
+      "allotted": 1343488,
+      "expected_solved": 195.667,
+      "solve_rate": 0.7089,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 145.64
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 4870.992343051144,
+      "b_tot": 1344394,
+      "allotted": 1343488,
+      "expected_solved": 195.667,
+      "solve_rate": 0.7089,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 145.64
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 4870.992343051144,
+      "b_tot": 1344394,
+      "allotted": 758784,
+      "expected_solved": 216.667,
+      "solve_rate": 0.785,
+      "n_skipped": 39,
+      "solved_per_1m_allotted": 285.54
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 6316.895540870917,
+      "b_tot": 1743463,
+      "allotted": 1740800,
+      "expected_solved": 197.667,
+      "solve_rate": 0.7162,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 113.55
+    },
+    {
+      "arm": "length",
+      "b_bar": 6316.895540870917,
+      "b_tot": 1743463,
+      "allotted": 1679360,
+      "expected_solved": 202.0,
+      "solve_rate": 0.7319,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 120.28
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 6316.895540870917,
+      "b_tot": 1743463,
+      "allotted": 1368064,
+      "expected_solved": 192.667,
+      "solve_rate": 0.6981,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 140.83
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 6316.895540870917,
+      "b_tot": 1743463,
+      "allotted": 1742848,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 118.96
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 6316.895540870917,
+      "b_tot": 1743463,
+      "allotted": 1742848,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 3,
+      "solved_per_1m_allotted": 118.96
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 6316.895540870917,
+      "b_tot": 1743463,
+      "allotted": 1742848,
+      "expected_solved": 206.667,
+      "solve_rate": 0.7488,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 118.58
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 6316.895540870917,
+      "b_tot": 1743463,
+      "allotted": 758784,
+      "expected_solved": 216.667,
+      "solve_rate": 0.785,
+      "n_skipped": 39,
+      "solved_per_1m_allotted": 285.54
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 8191.9999999999945,
+      "b_tot": 2260992,
+      "allotted": 2260992,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 91.7
+    },
+    {
+      "arm": "length",
+      "b_bar": 8191.9999999999945,
+      "b_tot": 2260992,
+      "allotted": 1873920,
+      "expected_solved": 203.667,
+      "solve_rate": 0.7379,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 108.68
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 8191.9999999999945,
+      "b_tot": 2260992,
+      "allotted": 1769472,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 117.17
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 8191.9999999999945,
+      "b_tot": 2260992,
+      "allotted": 2260992,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 91.7
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 8191.9999999999945,
+      "b_tot": 2260992,
+      "allotted": 2260992,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 91.7
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 8191.9999999999945,
+      "b_tot": 2260992,
+      "allotted": 2211840,
+      "expected_solved": 206.333,
+      "solve_rate": 0.7476,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 93.29
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 8191.9999999999945,
+      "b_tot": 2260992,
+      "allotted": 758784,
+      "expected_solved": 216.667,
+      "solve_rate": 0.785,
+      "n_skipped": 39,
+      "solved_per_1m_allotted": 285.54
+    },
+    {
+      "arm": "uniform",
+      "b_bar": 8192.0,
+      "b_tot": 2260992,
+      "allotted": 2260992,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 91.7
+    },
+    {
+      "arm": "length",
+      "b_bar": 8192.0,
+      "b_tot": 2260992,
+      "allotted": 1873920,
+      "expected_solved": 203.667,
+      "solve_rate": 0.7379,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 108.68
+    },
+    {
+      "arm": "oracle_bhat",
+      "b_bar": 8192.0,
+      "b_tot": 2260992,
+      "allotted": 1769472,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 117.17
+    },
+    {
+      "arm": "oracle_greedy",
+      "b_bar": 8192.0,
+      "b_tot": 2260992,
+      "allotted": 2260992,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 91.7
+    },
+    {
+      "arm": "oracle_optimal",
+      "b_bar": 8192.0,
+      "b_tot": 2260992,
+      "allotted": 2260992,
+      "expected_solved": 207.333,
+      "solve_rate": 0.7512,
+      "n_skipped": 0,
+      "solved_per_1m_allotted": 91.7
+    },
+    {
+      "arm": "oracle_triage",
+      "b_bar": 8192.0,
+      "b_tot": 2260992,
+      "allotted": 2211840,
+      "expected_solved": 206.333,
+      "solve_rate": 0.7476,
+      "n_skipped": 6,
+      "solved_per_1m_allotted": 93.29
+    },
+    {
+      "arm": "true_bstar",
+      "b_bar": 8192.0,
+      "b_tot": 2260992,
+      "allotted": 758784,
+      "expected_solved": 216.667,
+      "solve_rate": 0.785,
+      "n_skipped": 39,
+      "solved_per_1m_allotted": 285.54
+    }
+  ],
+  "verdict": {
+    "b_bar": 2896.0,
+    "uniform_expected_solved": 162.0,
+    "ceiling_expected_solved": 216.667,
+    "headroom_over_uniform": 54.667,
+    "ceiling_noise_bias": 9.334,
+    "gain_over_uniform": {
+      "length": -10.333,
+      "oracle_bhat": -11.667,
+      "oracle_greedy": 11.0,
+      "oracle_optimal": 11.0,
+      "oracle_triage": 11.333,
+      "true_bstar": 54.667
+    },
+    "best_learned_arm": "oracle_triage",
+    "fraction_of_headroom_captured": 0.207,
+    "best_gain_over_sweep": {
+      "1024.0": 7.333,
+      "1327.9637039626336": 8.0,
+      "1722.1558584396066": 6.0,
+      "2048.0": -1.333,
+      "2233.3598364984464": 6.667,
+      "2896.0": 11.333,
+      "2896.309375740099": 11.333,
+      "3756.0485609663297": 7.667,
+      "4096.0": 1.667,
+      "4870.992343051144": 2.667,
+      "6316.895540870917": 9.666,
+      "8191.9999999999945": 0.0,
+      "8192.0": 0.0
+    },
+    "winning_region_b_bar": [
+      1024.0,
+      6316.895540870917
+    ],
+    "best_operating_point": 2896.0,
+    "go": true
+  },
+  "triage_sweep": [
+    {
+      "triage_threshold": 0.1,
+      "expected_solved": 173.333,
+      "n_skipped": 3,
+      "allotted": 798720
+    },
+    {
+      "triage_threshold": 0.2,
+      "expected_solved": 173.333,
+      "n_skipped": 5,
+      "allotted": 798720
+    },
+    {
+      "triage_threshold": 0.3,
+      "expected_solved": 173.333,
+      "n_skipped": 6,
+      "allotted": 798720
+    },
+    {
+      "triage_threshold": 0.4,
+      "expected_solved": 174.0,
+      "n_skipped": 11,
+      "allotted": 798720
+    },
+    {
+      "triage_threshold": 0.5,
+      "expected_solved": 172.0,
+      "n_skipped": 20,
+      "allotted": 798720
+    }
+  ]
+}
